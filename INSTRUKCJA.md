@@ -34,7 +34,7 @@ Scena składa się wyłącznie z **prymitywów Unity** (kostki, kule, walce, kap
 | Gogle | Meta Quest 3S z aktualnym Horizon OS, **tryb deweloperski włączony** |
 | Kabel | USB-C z transmisją danych (nie tylko do ładowania) |
 | Konto | Konto Meta z utworzoną organizacją deweloperską (potrzebne do włączenia trybu deweloperskiego) |
-| Windows | Sterownik ADB dla Quest – najprościej zainstalować **Meta Quest Developer Hub (MQDH)** |
+| Windows | Sterownik ADB dla Quest – najprościej zainstalować **Meta Quest Developer Hub (MQDH)**; bez niego Unity nie widzi gogli |
 
 Pakiety są wpisane w `Packages/manifest.json` i instalują się same przy pierwszym otwarciu projektu:
 
@@ -143,12 +143,7 @@ Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym
 1. Aplikacja **Meta Horizon** na telefonie › Urządzenia › Quest 3S › **Ustawienia gogli › Tryb dewelopera** › włącz.
 2. W goglach: **Ustawienia › Ruch i śledzenie › Śledzenie dłoni** – włącz, razem z **automatycznym przełączaniem między dłońmi a kontrolerami**.
 3. Podłącz gogle kablem USB-C do komputera. W goglach pojawi się pytanie **„Zezwolić na debugowanie USB?”** – zaznacz *Zawsze zezwalaj z tego komputera* i potwierdź.
-4. Sprawdź połączenie (opcjonalnie) w terminalu:
-   ```
-   adb devices
-   ```
-   Gogle powinny być widoczne jako `device` (nie `unauthorized`). `adb` jest w MQDH oraz w Unity:
-   `<katalog Unity>\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe`.
+4. Sprawdź połączenie w Unity: **File › Build Profiles › Android** › lista **Run Device** › **Refresh** – gogle powinny pojawić się na liście.
 
 ### Build & Run
 **Sposób A (najprostszy):** `VR Input Demo › 4. Build And Run (USB)`
@@ -169,13 +164,11 @@ Aplikacja uruchomi się w goglach automatycznie. Później znajdziesz ją w **Bi
 | Co | Jak |
 |---|---|
 | **Logi w edytorze** | Okno **Console** › lista *Editor* (lewy górny róg) › wybierz gogle (*AndroidPlayer…*). Działa dla Development Build. |
-| **Logcat** | Pakiet **Android Logcat** (Package Manager › Unity Registry › *Android Logcat*) › *Window › Analysis › Android Logcat*. Filtr: `VRInputDemo`. |
-| **Logcat z terminala** | `adb logcat -s Unity` – każde zdarzenie demo ma prefiks `[VRInputDemo]`. |
+| **Logi systemowe gogli** | Pakiet **Android Logcat** (Package Manager › Unity Registry › *Android Logcat*) › *Window › Analysis › Android Logcat*. Filtr: `VRInputDemo` – każde zdarzenie demo ma ten prefiks. |
 | **Debugger C# (breakpointy)** | Build z *Script Debugging*. Visual Studio: **Debug › Attach Unity Debugger** › wybierz gogle (USB). Rider: **Run › Attach to Unity Process**. Aby złapać kod startowy, zaznacz w buildzie **Wait For Managed Debugger**. |
 | **Profiler** | **Window › Analysis › Profiler** › lista *Play Mode/Editor* › wybierz gogle. |
-| **Bezprzewodowo (opcjonalnie)** | Po podłączeniu kablem: `adb tcpip 5555`, potem `adb connect <IP gogli>:5555`, odłącz kabel. |
 
-Każda akcja w demo trafia jednocześnie na panel **Dziennik zdarzeń** w VR i do logcat – łatwo porównać to, co się dzieje w goglach, z tym, co widzi komputer.
+Każda akcja w demo trafia jednocześnie na panel **Dziennik zdarzeń** w VR i do logów w edytorze (Console / Android Logcat) – łatwo porównać to, co się dzieje w goglach, z tym, co widzi komputer.
 
 ---
 
@@ -195,9 +188,10 @@ Każda akcja w demo trafia jednocześnie na panel **Dziennik zdarzeń** w VR i d
                  └──────────────────────┘
                          ( TY )   ← znacznik startu
                  ┌──── STÓŁ ISDK ───────┐
-                 │ obiekty ISDK, UI     │   [Tablica ISDK]
+                 │ stanowiska 1–4       │   [Tablica ISDK]
                  └──────────────────────┘
-                     [podłoga teleportu ISDK]
+                   [5] cel promienia ISDK
+                   [6] podłoga teleportu ISDK
 ```
 
 Po starcie stoisz na turkusowym znaczniku. Przed Tobą stół, z lewej panel kontrolerów, z prawej panel dłoni, dalej pomoc i dziennik. **Strefa Interaction SDK jest za Twoimi plecami.**
@@ -218,6 +212,8 @@ Po starcie stoisz na turkusowym znaczniku. Przed Tobą stół, z lewej panel kon
 | **Klik lewej gałki** | Pokaż/ukryj panele |
 | **Klik prawej gałki** | Powrót na start |
 | **Końcówka kontrolera** | Wciskanie przycisków na stole (poke) |
+
+> Gdy w scenie jest blok **Interactions Rig** (strefa ISDK, punkt 8), gałkami steruje ISDK (teleport i obrót), a chodzenie i obrót gałkami z demo są wyłączone. Pozostałe przyciski działają bez zmian.
 
 Na panelu **KONTROLERY** widać na żywo wszystkie odczyty: wartości triggera i gripu (0–1), położenie gałki, stan przycisków (*dotyk* / *WCIŚNIĘTY*), dotyk pojemnościowy, zbliżenie palca, pozycję, prędkość i stan śledzenia. Pod tekstem są wskaźniki 3D: słupki trigger/grip, gałka z kropką i kule przycisków (szary = puszczony, żółty = dotyk, zielony = wciśnięty).
 
@@ -338,13 +334,16 @@ Gest musi być stabilny przez 0,12 s (oprócz pinch), żeby nie migotał przy pr
 
 Za plecami gracza stoi stół ISDK z **6 ponumerowanymi stanowiskami**. Na każde trafia gotowy obiekt utworzony przez jeden Building Block ISDK. Bloki tworzą kompletne, podpięte obiekty same – nie nakłada się ich na prymitywy demo.
 
+Widok po odwróceniu się (stoisz na dole rysunku):
+
 ```
-                  [6] Teleport (podłoga)
-                  [5] Ray (cel w powietrzu)
-   ┌─────────────────── STÓŁ ISDK ───────────────────┐   [tablica]
-   │ [3] Distance Grab  [4] Poke  [2] Touch  [1] Grab │
-   └──────────────────────────────────────────────────┘
-                     ( TY – odwróć się )
+                       [6] Teleport (podłoga)
+                       [5] Ray (cel w powietrzu)
+              ┌──────────────── STÓŁ ISDK ────────────────┐
+  [tablica]   │ [1] Grab   [2] Touch       [3] Distance   │
+              │                            [4] Poke       │
+              └───────────────────────────────────────────┘
+                              ( TY )
 ```
 
 ### Krok 1 – rig interakcji
@@ -371,8 +370,6 @@ Jeśli przycisk (4) albo cel (5) jest zwrócony do Ciebie tyłem, zaznacz go i o
 
 ### Krok 4 – sprawdzenie
 **VR Input Demo › 3. Sprawdź bloki w scenie** – przy *Interactions Rig* zobaczysz też licznik bloków ISDK (np. `6/6`).
-
-> **Masz strefę ze starej wersji** (kostka, kula, walec, panel UI)? Uruchom **VR Input Demo › 2. Zbuduj scenę demo** i zgódź się na **Przebuduj strefę**. Stare bloki ISDK znikną razem z nią – dodaj je ponownie od kroku 2.
 
 ### Jak demo zachowuje się przy rigu ISDK
 Przy starcie demo wykrywa blok Interactions Rig i:
@@ -417,8 +414,8 @@ Zacznij od **VR Input Demo › 3. Sprawdź bloki w scenie** – wskazuje większ
 
 | Problem | Rozwiązanie |
 |---|---|
-| Gogle nie są widoczne w *Run Device* / `adb devices` | Kabel z transmisją danych, potwierdź „Zezwól na debugowanie USB” w goglach, zainstaluj MQDH (sterownik ADB), sprawdź tryb dewelopera. |
-| `unauthorized` w `adb devices` | Odłącz i podłącz kabel, potwierdź okno w goglach. |
+| Gogle nie są widoczne w *Run Device* | Kabel z transmisją danych, potwierdź „Zezwól na debugowanie USB” w goglach, zainstaluj MQDH (sterownik ADB), sprawdź tryb dewelopera, kliknij *Refresh*. |
+| Gogle są na liście, ale instalacja się nie udaje | W goglach nie potwierdzono debugowania USB – odłącz i podłącz kabel, potwierdź okno w goglach. |
 | Aplikacja startuje jako płaskie okno 2D | Nie zaznaczono **OpenXR + Meta XR** w *XR Plug-in Management › Android* (krok 2) albo brak bloku **Camera Rig**. |
 | Obraz zdublowany / dwie kamery | W scenie są dwa rigi lub zostawiona *Main Camera* – zostaw jeden blok Camera Rig. |
 | Stół na wysokości głowy / pod podłogą | Uruchom *3. Sprawdź bloki* (ustawia Floor Level) i zresetuj granicę (Guardian) w goglach. |
@@ -429,7 +426,7 @@ Zacznij od **VR Input Demo › 3. Sprawdź bloki w scenie** – wskazuje większ
 | Mikrogesty nie działają | Wymagają aktualnego Horizon OS i śledzenia dłoni; sprawdź zalecenia w *Project Setup Tool*. |
 | Podwójne dłonie po dodaniu ISDK | W *Demo › DemoActions* zaznacz *Hide Block Visuals When Isdk Rig Present*. |
 | Gałki nie poruszają graczem | Jest blok Interactions Rig – lokomocję przejmuje ISDK (punkt 8); możesz to zmienić w *DemoActions*. |
-| Brak logów w Console | Build musi być *Development*; w Console wybierz gogle z listy połączeń albo użyj `adb logcat -s Unity`. |
+| Brak logów w Console | Build musi być *Development*; w Console wybierz gogle z listy połączeń albo użyj okna *Android Logcat*. |
 
 ---
 

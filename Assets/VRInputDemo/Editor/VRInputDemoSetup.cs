@@ -313,7 +313,7 @@ namespace VRInputDemo.EditorTools
             if (buildReport.summary.result == BuildResult.Succeeded)
                 Debug.Log($"[VRInputDemo] Build OK ({buildReport.summary.totalSize / (1024f * 1024f):0.0} MB) -> {ApkPath}. Aplikacja uruchamia się na goglach.");
             else
-                Debug.LogError($"[VRInputDemo] Build nieudany: {buildReport.summary.result}. Sprawdź Console (błędy) i czy gogle są widoczne w 'adb devices'.");
+                Debug.LogError($"[VRInputDemo] Build nieudany: {buildReport.summary.result}. Sprawdź Console (błędy) i czy gogle są widoczne w Build Profiles > Run Device.");
         }
 
         [MenuItem("VR Input Demo/Otwórz scenę demo", false, 20)]
