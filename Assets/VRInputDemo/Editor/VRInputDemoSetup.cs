@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
@@ -18,8 +19,10 @@ namespace VRInputDemo.EditorTools
     /// <summary>
     /// Menu "VR Input Demo" w edytorze:
     ///  1. Konfiguruj projekt dla Meta Quest - ustawienia Androida/Quest, URP, hand tracking.
-    ///  2. Zbuduj scenę demo - tworzy całą scenę z prymitywów + rig i dłonie z Meta XR Core SDK.
-    ///  3. Build And Run (USB) - buduje APK (Development + Script Debugging) i uruchamia na goglach.
+    ///  2. Zbuduj scenę demo - otoczenie z prymitywów, panele, logika demo i strefa ISDK.
+    ///     Rig, dłonie, kontrolery i interakcje ISDK dodaje się z okna Building Blocks.
+    ///  3. Sprawdź bloki w scenie - raport, których Building Blocks brakuje.
+    ///  4. Build And Run (USB) - buduje APK (Development + Script Debugging) i uruchamia na goglach.
     /// </summary>
     public static class VRInputDemoSetup
     {
@@ -27,13 +30,14 @@ namespace VRInputDemo.EditorTools
         public const string ScenePath = Root + "/Scenes/InputDemo.unity";
         const string SettingsFolder = Root + "/Settings";
         const string MaterialsFolder = Root + "/Materials";
-        const string CorePackage = "Packages/com.meta.xr.sdk.core";
         const string ApkPath = "Builds/VRInputDemo.apk";
+        const string IsdkZoneName = "ISDK_Zone";
+
+        /// <summary>Obiekty główne tworzone przez skrypt (przy odświeżaniu sceny są usuwane i tworzone od nowa).</summary>
+        static readonly string[] DemoRootNames = { "Directional Light", "Environment", "Interactables", "Panels", "InputSources", "Demo" };
 
         static readonly Vector3 HeadPos = new Vector3(0f, 1.6f, 0f);
         static readonly Color PanelBg = new Color(0.06f, 0.07f, 0.1f, 0.9f);
-
-        static List<GameObject> corePrefabsCache;
 
         // =====================================================================
         // 1. KONFIGURACJA PROJEKTU
@@ -67,7 +71,7 @@ namespace VRInputDemo.EditorTools
 
             const string next =
                 "Dalej:\n" +
-                "• Project Settings > XR Plug-in Management > zakładka Android: zaznacz OpenXR oraz grupę funkcji \"Meta XR\".\n" +
+                "• Project Settings > XR Plug-in Management > zakładka Android: zaznacz OpenXR oraz grupę \"Meta XR\".\n" +
                 "• Meta > Tools > Project Setup Tool: \"Fix All\" (Android).\n" +
                 "• VR Input Demo > 2. Zbuduj scenę demo.";
 
@@ -88,93 +92,168 @@ namespace VRInputDemo.EditorTools
         }
 
         // =====================================================================
-        // 2. BUDOWA SCENY
+        // 2. BUDOWA / ODŚWIEŻENIE SCENY
         // =====================================================================
 
         [MenuItem("VR Input Demo/2. Zbuduj scenę demo", false, 2)]
         public static void BuildDemoScene()
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            if (File.Exists(ScenePath) && !EditorUtility.DisplayDialog("VR Input Demo",
-                    "Scena " + ScenePath + " już istnieje. Zbudować ją od nowa (nadpisać)?", "Nadpisz", "Anuluj"))
+
+            bool exists = File.Exists(ScenePath);
+            if (exists && !EditorUtility.DisplayDialog("VR Input Demo",
+                    "Scena już istnieje. Odświeżyć zawartość demo?\n\n" +
+                    "• Building Blocks (Camera Rig, Hand Tracking, Controller Tracking, Interactions Rig) zostaną zachowane.\n" +
+                    "• Strefa ISDK (" + IsdkZoneName + ") też zostanie zachowana. Aby ją odbudować, usuń ją ze sceny przed odświeżeniem.",
+                    "Odśwież", "Anuluj"))
                 return;
 
             EnsureUrp();
             Material lit = EnsureLitMaterial();
             DemoUI.LitMaterial = lit;
-            corePrefabsCache = null;
 
             try
             {
-                EditorUtility.DisplayProgressBar("VR Input Demo", "Tworzenie sceny...", 0.1f);
-                var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                UnityEngine.SceneManagement.Scene scene;
+                if (exists)
+                {
+                    scene = EditorSceneManager.OpenScene(ScenePath);
+                    foreach (var go in scene.GetRootGameObjects())
+                        if (DemoRootNames.Contains(go.name)) Object.DestroyImmediate(go);
+                }
+                else
+                {
+                    scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                }
 
                 BuildLighting();
-                var env = new GameObject("Environment").transform;
-                BuildEnvironment(env);
+                BuildEnvironment(new GameObject("Environment").transform);
 
-                EditorUtility.DisplayProgressBar("VR Input Demo", "OVRCameraRig, dłonie, kontrolery...", 0.3f);
-                OVRCameraRig rig = CreateCameraRig();
-                var ownVisuals = new List<GameObject>();
-                OVRHand leftHand = CreateHand(rig, true, ownVisuals);
-                OVRHand rightHand = CreateHand(rig, false, ownVisuals);
-                CreateControllerVisual(rig, true, ownVisuals);
-                CreateControllerVisual(rig, false, ownVisuals);
-
-                var inputs = new GameObject("InputSources").transform;
-                XRInputSource leftSrc = CreateInputSource(inputs, HandSide.Left, rig, leftHand);
-                XRInputSource rightSrc = CreateInputSource(inputs, HandSide.Right, rig, rightHand);
-
-                var locomotion = rig.gameObject.AddComponent<PlayerLocomotion>();
-                locomotion.rig = rig;
-
-                EditorUtility.DisplayProgressBar("VR Input Demo", "Obiekty interaktywne i panele...", 0.6f);
                 var interactables = new GameObject("Interactables").transform;
                 BuildGrabbables(interactables);
                 BuildPokeButtons(interactables);
                 BuildTargets(interactables);
 
+                // Źródła wejścia: OVRCameraRig i OVRHand znajdą same w trakcie działania (bloki).
+                var inputs = new GameObject("InputSources").transform;
+                XRInputSource leftSrc = CreateInputSource(inputs, HandSide.Left);
+                XRInputSource rightSrc = CreateInputSource(inputs, HandSide.Right);
+
                 var panels = new GameObject("Panels");
                 BuildPanels(panels.transform, leftSrc, rightSrc);
 
-                BuildIsdkZone();
+                if (GameObject.Find(IsdkZoneName) == null) BuildIsdkZone();
 
                 var demo = new GameObject("Demo");
                 demo.AddComponent<DemoResources>().litMaterial = lit;
+                var locomotion = demo.AddComponent<PlayerLocomotion>();
                 var actions = demo.AddComponent<DemoActions>();
                 actions.left = leftSrc;
                 actions.right = rightSrc;
                 actions.locomotion = locomotion;
                 actions.panelsRoot = panels;
-                actions.ownVisualRoots = ownVisuals;
 
                 SetHandTrackingSupport();
 
                 EnsureFolder(Root + "/Scenes");
                 EditorSceneManager.SaveScene(scene, ScenePath);
                 AddSceneToBuild();
-                Selection.activeGameObject = rig.gameObject;
             }
             finally
             {
-                EditorUtility.ClearProgressBar();
                 DemoUI.LitMaterial = null;
-                corePrefabsCache = null;
             }
 
+            string report = CheckScene(true, out bool ready);
+            EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
             EditorUtility.DisplayDialog("VR Input Demo",
-                "Scena gotowa: " + ScenePath + "\n\n" +
-                "Podłącz Quest 3S kablem USB i użyj: VR Input Demo > 3. Build And Run (USB)\n" +
-                "(albo File > Build Profiles > Build And Run).\n\n" +
-                "Strefa Interaction SDK jest za Twoimi plecami - komponenty ISDK dodaj Quick Actions (patrz INSTRUKCJA.md).",
+                "Scena gotowa: " + ScenePath + "\n\n" + report +
+                (ready ? "" : "\n\nDodaj brakujące bloki: Meta > Tools > Building Blocks (szczegóły w INSTRUKCJA.md, punkt 3)."),
                 "OK");
         }
 
         // =====================================================================
-        // 3. BUILD AND RUN
+        // 3. SPRAWDZENIE BLOKÓW
         // =====================================================================
 
-        [MenuItem("VR Input Demo/3. Build And Run (USB)", false, 3)]
+        [MenuItem("VR Input Demo/3. Sprawdź bloki w scenie", false, 3)]
+        public static void CheckSceneMenu()
+        {
+            string report = CheckScene(true, out bool _);
+            if (EditorSceneManager.GetActiveScene().isDirty) EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
+            EditorUtility.DisplayDialog("VR Input Demo – Building Blocks", report, "OK");
+        }
+
+        /// <summary>
+        /// Sprawdza otwartą scenę: czy są wymagane Building Blocks i czy nie ma duplikatów.
+        /// Przy fix = true ustawia też Tracking Origin = Floor Level i obsługę dłoni.
+        /// </summary>
+        static string CheckScene(bool fix, out bool ready)
+        {
+            var sb = new StringBuilder();
+
+            var rigs = Object.FindObjectsByType<OVRCameraRig>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            bool rigOk = rigs.Length == 1;
+            Line(sb, rigOk, "Camera Rig",
+                rigs.Length == 0 ? "brak – dodaj blok Camera Rig" :
+                rigs.Length > 1 ? $"{rigs.Length} rigi – zostaw jeden" : "OK");
+
+            int left = 0, right = 0;
+            foreach (var h in Resources.FindObjectsOfTypeAll<OVRHand>())
+            {
+                if (h == null || !h.gameObject.scene.IsValid()) continue;
+                if (h.GetHand() == OVRPlugin.Hand.HandLeft) left++;
+                else if (h.GetHand() == OVRPlugin.Hand.HandRight) right++;
+            }
+            bool handsOk = left >= 1 && right >= 1;
+            Line(sb, handsOk, "Hand Tracking", handsOk ? "OK (lewa i prawa)" : $"lewa: {left}, prawa: {right} – dodaj blok Hand Tracking");
+
+            Type helperType = FindType("OVRControllerHelper");
+            int controllers = helperType != null
+                ? Object.FindObjectsByType(helperType, FindObjectsInactive.Include, FindObjectsSortMode.None).Length
+                : 0;
+            Line(sb, controllers > 0, "Controller Tracking", controllers > 0 ? "OK" : "brak modeli kontrolerów – dodaj blok Controller Tracking (zalecane)");
+
+            bool isdkRig = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Any(t => IsIsdkRigName(t.name));
+            Line(sb, isdkRig, "Interactions Rig", isdkRig ? "OK" : "brak – potrzebny tylko dla strefy ISDK (punkt 8 instrukcji)");
+
+            // Zbędna kamera spoza rigu (np. domyślna Main Camera).
+            var strayCameras = Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(c => rigs.All(r => !c.transform.IsChildOf(r.transform))).ToList();
+            if (strayCameras.Count > 0)
+                Line(sb, false, "Main Camera", "w scenie jest kamera poza rigiem (" + strayCameras[0].name + ") – usuń ją");
+
+            var manager = Object.FindAnyObjectByType<OVRManager>();
+            if (manager != null && fix)
+            {
+                SetEnum(manager, "FloorLevel", false, "_trackingOriginType", "m_TrackingOriginType", "trackingOriginType");
+                SetHandTrackingSupport();
+                EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+            }
+            if (manager == null && rigs.Length > 0)
+                Line(sb, false, "OVRManager", "brak – dodaj blok Camera Rig ponownie");
+
+            ready = rigOk && handsOk && strayCameras.Count == 0;
+            sb.Append(ready ? "\nScena jest gotowa do uruchomienia." : "\nScena wymaga uzupełnienia.");
+            return sb.ToString();
+        }
+
+        static void Line(StringBuilder sb, bool ok, string what, string info) =>
+            sb.Append(ok ? "[OK]    " : "[BRAK] ").Append(what).Append(" – ").AppendLine(info);
+
+        static bool IsIsdkRigName(string name)
+        {
+            string n = name.Replace(" ", "");
+            return n.IndexOf("InteractionRig", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   n.IndexOf("InteractionsRig", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // =====================================================================
+        // 4. BUILD AND RUN
+        // =====================================================================
+
+        [MenuItem("VR Input Demo/4. Build And Run (USB)", false, 4)]
         public static void BuildAndRun()
         {
             if (!File.Exists(ScenePath))
@@ -188,6 +267,14 @@ namespace VRInputDemo.EditorTools
                     "Aktywna platforma to nie Android. Uruchom krok 1 i przełącz platformę (albo File > Build Profiles).", "OK");
                 return;
             }
+            if (EditorSceneManager.GetActiveScene().path == ScenePath)
+            {
+                string report = CheckScene(false, out bool ready);
+                if (!ready && !EditorUtility.DisplayDialog("VR Input Demo",
+                        report + "\n\nZbudować mimo to?", "Buduj", "Anuluj"))
+                    return;
+            }
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
             Directory.CreateDirectory(Path.GetDirectoryName(ApkPath) ?? "Builds");
             EditorUserBuildSettings.buildAppBundle = false;
@@ -201,11 +288,11 @@ namespace VRInputDemo.EditorTools
                 options = BuildOptions.AutoRunPlayer | BuildOptions.Development | BuildOptions.AllowDebugging
             };
 
-            BuildReport report = BuildPipeline.BuildPlayer(options);
-            if (report.summary.result == BuildResult.Succeeded)
-                Debug.Log($"[VRInputDemo] Build OK ({report.summary.totalSize / (1024f * 1024f):0.0} MB) -> {ApkPath}. Aplikacja uruchamia się na goglach.");
+            BuildReport buildReport = BuildPipeline.BuildPlayer(options);
+            if (buildReport.summary.result == BuildResult.Succeeded)
+                Debug.Log($"[VRInputDemo] Build OK ({buildReport.summary.totalSize / (1024f * 1024f):0.0} MB) -> {ApkPath}. Aplikacja uruchamia się na goglach.");
             else
-                Debug.LogError($"[VRInputDemo] Build nieudany: {report.summary.result}. Sprawdź Console (błędy) i czy gogle są widoczne w 'adb devices'.");
+                Debug.LogError($"[VRInputDemo] Build nieudany: {buildReport.summary.result}. Sprawdź Console (błędy) i czy gogle są widoczne w 'adb devices'.");
         }
 
         [MenuItem("VR Input Demo/Otwórz scenę demo", false, 20)]
@@ -284,198 +371,19 @@ namespace VRInputDemo.EditorTools
         }
 
         // =====================================================================
-        // META XR: RIG, DŁONIE, KONTROLERY
+        // ŹRÓDŁA WEJŚCIA
         // =====================================================================
 
-        static OVRCameraRig CreateCameraRig()
-        {
-            OVRCameraRig rig = null;
-            var prefab = FindCorePrefab(go => go.GetComponent<OVRCameraRig>() != null, go => go.name == "OVRCameraRig" ? 10 : 0);
-            if (prefab != null)
-            {
-                var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-                inst.name = "OVRCameraRig";
-                rig = inst.GetComponent<OVRCameraRig>();
-            }
-            if (rig == null)
-            {
-                Debug.LogWarning("[VRInputDemo] Nie znaleziono prefabu OVRCameraRig - tworzę rig z komponentu.");
-                rig = new GameObject("OVRCameraRig").AddComponent<OVRCameraRig>();
-            }
-
-            rig.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-            try { rig.EnsureGameObjectIntegrity(); }
-            catch (Exception e) { Debug.LogWarning("[VRInputDemo] EnsureGameObjectIntegrity: " + e.Message); }
-
-            var manager = Object.FindAnyObjectByType<OVRManager>();
-            if (manager == null) manager = rig.gameObject.AddComponent<OVRManager>();
-            // Poziom podłogi: y = 0 w scenie to podłoga w pokoju.
-            SetEnum(manager, "FloorLevel", "_trackingOriginType", "m_TrackingOriginType", "trackingOriginType");
-
-            if (rig.centerEyeAnchor != null)
-            {
-                var cam = rig.centerEyeAnchor.GetComponent<Camera>();
-                if (cam != null)
-                {
-                    cam.clearFlags = CameraClearFlags.SolidColor;
-                    cam.backgroundColor = new Color(0.09f, 0.1f, 0.13f);
-                    cam.nearClipPlane = 0.02f;
-                    cam.farClipPlane = 100f;
-                }
-            }
-            return rig;
-        }
-
-        static OVRHand CreateHand(OVRCameraRig rig, bool left, List<GameObject> ownVisuals)
-        {
-            Transform anchor = left ? rig.leftHandAnchor : rig.rightHandAnchor;
-            if (anchor == null)
-            {
-                Debug.LogWarning("[VRInputDemo] Brak HandAnchor w OVRCameraRig - pomiń dłonie albo dodaj Building Block 'Hand Tracking'.");
-                return null;
-            }
-
-            var prefab = FindCorePrefab(
-                go => go.GetComponent<OVRHand>() != null && go.GetComponent<OVRSkeleton>() != null,
-                go => ScoreHandPrefab(go, left));
-
-            GameObject handGO;
-            if (prefab != null)
-            {
-                handGO = (GameObject)PrefabUtility.InstantiatePrefab(prefab, anchor);
-            }
-            else
-            {
-                Debug.LogWarning("[VRInputDemo] Nie znaleziono prefabu dłoni - tworzę OVRHand + OVRSkeleton (wizualizacja: kulki w stawach).");
-                handGO = new GameObject();
-                handGO.transform.SetParent(anchor, false);
-                handGO.AddComponent<OVRHand>();
-                handGO.AddComponent<OVRSkeleton>();
-            }
-
-            handGO.name = left ? "LeftHand" : "RightHand";
-            handGO.transform.localPosition = Vector3.zero;
-            handGO.transform.localRotation = Quaternion.identity;
-            SetHandSide(handGO, left);
-
-            var hand = handGO.GetComponent<OVRHand>();
-            if (rig.trackingSpace != null) SetObjectReference(hand, rig.trackingSpace, "_pointerPoseRoot");
-
-            // Prefab z siatką dłoni ma SkinnedMeshRenderer; bez niego pokazujemy stawy jako kulki.
-            if (handGO.GetComponentInChildren<SkinnedMeshRenderer>(true) == null)
-            {
-                var viz = handGO.AddComponent<HandJointVisualizer>();
-                viz.hand = hand;
-                viz.skeleton = handGO.GetComponent<OVRSkeleton>();
-            }
-
-            ownVisuals.Add(handGO);
-            return hand;
-        }
-
-        static int ScoreHandPrefab(GameObject go, bool left)
-        {
-            string n = go.name;
-            int score = 0;
-            if (n == "OVRHandPrefab") score += 5;
-            if (n.Contains(left ? "Left" : "Right")) score += 10;
-            if (n.Contains(left ? "Right" : "Left")) score -= 20;
-            if (go.GetComponent("OVRMeshRenderer") != null) score += 3;
-            return score;
-        }
-
-        /// <summary>
-        /// Ustawia stronę dłoni we wszystkich polach typu enum komponentów OVR* (OVRHand, OVRSkeleton, OVRMesh):
-        /// HandLeft &lt;-&gt; HandRight, XRHandLeft &lt;-&gt; XRHandRight. Działa niezależnie od wersji SDK.
-        /// </summary>
-        static void SetHandSide(GameObject go, bool left)
-        {
-            string want = left ? "Left" : "Right";
-            string other = left ? "Right" : "Left";
-
-            foreach (var c in go.GetComponentsInChildren<Component>(true))
-            {
-                if (c == null) continue;
-                string typeName = c.GetType().Name;
-                if (!typeName.StartsWith("OVR")) continue;
-                bool handComponent = typeName == "OVRHand" || typeName == "OVRSkeleton" || typeName == "OVRMesh";
-
-                var so = new SerializedObject(c);
-                var it = so.GetIterator();
-                bool changed = false;
-                while (it.Next(true))
-                {
-                    if (it.propertyType != SerializedPropertyType.Enum) continue;
-                    string[] names = it.enumNames;
-                    int idx = it.enumValueIndex;
-                    if (names == null || idx < 0 || idx >= names.Length) continue;
-
-                    string cur = names[idx];
-                    string target = null;
-                    if (cur.Contains(other)) target = cur.Replace(other, want);
-                    else if (cur == "None" && handComponent && Array.IndexOf(names, "Hand" + want) >= 0) target = "Hand" + want;
-                    if (target == null || target == cur) continue;
-
-                    int t = Array.IndexOf(names, target);
-                    if (t >= 0)
-                    {
-                        it.enumValueIndex = t;
-                        changed = true;
-                    }
-                }
-                if (changed) so.ApplyModifiedPropertiesWithoutUndo();
-            }
-        }
-
-        static void CreateControllerVisual(OVRCameraRig rig, bool left, List<GameObject> ownVisuals)
-        {
-            Transform anchor = left ? rig.leftControllerAnchor : rig.rightControllerAnchor;
-            if (anchor == null) return;
-            var mask = left ? OVRInput.Controller.LTouch : OVRInput.Controller.RTouch;
-
-            var prefab = FindCorePrefab(go => go.GetComponent("OVRControllerHelper") != null,
-                go => go.name == "OVRControllerPrefab" ? 10 : 0);
-            if (prefab != null)
-            {
-                var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab, anchor);
-                inst.name = left ? "LeftControllerModel" : "RightControllerModel";
-                inst.transform.localPosition = Vector3.zero;
-                inst.transform.localRotation = Quaternion.identity;
-                SetInt(inst.GetComponent("OVRControllerHelper"), (int)mask, "m_controller");
-                ownVisuals.Add(inst);
-                return;
-            }
-
-            // Zapasowy model z prymitywów.
-            var root = new GameObject(left ? "LeftControllerVisual" : "RightControllerVisual");
-            root.transform.SetParent(anchor, false);
-            var body = DemoUI.CreatePrimitive(PrimitiveType.Capsule, "Body", root.transform, new Vector3(0f, -0.03f, -0.02f),
-                new Vector3(0.035f, 0.045f, 0.035f), new Color(0.2f, 0.2f, 0.22f), false);
-            body.transform.localRotation = Quaternion.Euler(-30f, 0f, 0f);
-            DemoUI.CreatePrimitive(PrimitiveType.Cylinder, "Ring", root.transform, new Vector3(left ? 0.01f : -0.01f, 0.005f, 0.01f),
-                new Vector3(0.075f, 0.006f, 0.075f), new Color(0.35f, 0.35f, 0.4f), false);
-            DemoUI.DisableShadows(root);
-            root.AddComponent<ControllerVisibility>().controller = mask;
-            ownVisuals.Add(root);
-        }
-
-        static XRInputSource CreateInputSource(Transform parent, HandSide side, OVRCameraRig rig, OVRHand hand)
+        static XRInputSource CreateInputSource(Transform parent, HandSide side)
         {
             var go = new GameObject(side == HandSide.Left ? "LeftInput" : "RightInput");
             go.transform.SetParent(parent, false);
 
-            OVRSkeleton skeleton = hand != null ? hand.GetComponent<OVRSkeleton>() : null;
-
             var detector = go.AddComponent<HandGestureDetector>();
             detector.side = side;
-            detector.hand = hand;
-            detector.skeleton = skeleton;
 
             var src = go.AddComponent<XRInputSource>();
             src.side = side;
-            src.rig = rig;
-            src.hand = hand;
-            src.skeleton = skeleton;
             src.gestures = detector;
 
             var grabber = go.AddComponent<SimpleGrabber>();
@@ -518,8 +426,6 @@ namespace VRInputDemo.EditorTools
                     .FirstOrDefault(m => m.Name == "CommitProjectConfig" && m.GetParameters().Length == 1);
                 if (commit != null) commit.Invoke(null, new[] { config });
                 else if (config is Object unityObj) { EditorUtility.SetDirty(unityObj); AssetDatabase.SaveAssets(); }
-
-                Debug.Log("[VRInputDemo] Hand Tracking Support = Controllers And Hands");
             }
             catch (Exception e)
             {
@@ -718,38 +624,31 @@ namespace VRInputDemo.EditorTools
             "Kciuk w górę (1 s) – reset sceny     kciuk w dół (1 s) – pokaż/ukryj panele\n" +
             "Mikrogesty kciukiem po palcu wskazującym: lewo/prawo – obrót,\n" +
             "    przód/tył – krok, stuknięcie – strzał\n\n" +
-            "<color=#C8A0FF>Za Tobą: strefa Interaction SDK (komponenty ISDK dodane Quick Actions).</color>";
+            "<color=#C8A0FF>Za Tobą: strefa Interaction SDK (obiekty z Building Blocks ISDK).</color>";
 
         // =====================================================================
-        // STREFA INTERACTION SDK
+        // STREFA INTERACTION SDK (obiekty docelowe dla Building Blocks)
         // =====================================================================
 
         static void BuildIsdkZone()
         {
-            var zone = new GameObject("ISDK_Zone");
+            var zone = new GameObject(IsdkZoneName);
             zone.AddComponent<IsdkZone>();
             var z = zone.transform;
 
             CreateTable(z, "ISDK_Table", new Vector3(0f, 0f, -1.0f), new Vector2(1.4f, 0.6f));
 
-            // Obiekty do Quick Actions "Grab" / "Distance Grab" / "Ray Grab" (Rigidbody już dodany).
-            IsdkObject(z, "ISDK_Grab_Kostka", PrimitiveType.Cube, new Vector3(0.45f, 0.845f, -0.95f), Vector3.one * 0.08f, new Color(0.75f, 0.45f, 1f));
-            IsdkObject(z, "ISDK_Grab_Kula", PrimitiveType.Sphere, new Vector3(0.25f, 0.85f, -0.95f), Vector3.one * 0.09f, new Color(0.55f, 0.4f, 0.95f));
-            IsdkObject(z, "ISDK_DistanceGrab_Walec", PrimitiveType.Cylinder, new Vector3(-0.1f, 0.855f, -1.15f), new Vector3(0.07f, 0.05f, 0.07f), new Color(0.4f, 0.8f, 0.9f));
-            IsdkObject(z, "ISDK_RayGrab_Kapsula", PrimitiveType.Capsule, new Vector3(-0.4f, 0.865f, -1.15f), new Vector3(0.05f, 0.06f, 0.05f), new Color(0.95f, 0.6f, 0.4f));
+            IsdkObject(z, "ISDK_1_Grab_Kostka", PrimitiveType.Cube, new Vector3(0.45f, 0.845f, -0.95f), Vector3.one * 0.08f, new Color(0.75f, 0.45f, 1f));
+            IsdkObject(z, "ISDK_2_TouchHandGrab_Kula", PrimitiveType.Sphere, new Vector3(0.15f, 0.85f, -0.95f), Vector3.one * 0.09f, new Color(0.55f, 0.4f, 0.95f));
+            IsdkObject(z, "ISDK_3_DistanceGrab_Walec", PrimitiveType.Cylinder, new Vector3(-0.3f, 0.855f, -1.15f), new Vector3(0.07f, 0.05f, 0.07f), new Color(0.4f, 0.8f, 0.9f));
 
-            // Podłoga do Quick Action "Teleport".
-            var tp = DemoUI.CreatePrimitive(PrimitiveType.Cube, "ISDK_Teleport_Podloga", z, new Vector3(0f, 0.005f, -3.3f),
-                new Vector3(2f, 0.01f, 2f), new Color(0.2f, 0.45f, 0.5f));
-            DemoUI.DisableShadows(tp);
-
-            // Canvas do Quick Actions "Poke Canvas" / "Ray Canvas".
+            // Panel UI dla bloków Poke Interaction i Ray Interaction.
             Vector3 canvasPos = new Vector3(0f, 1.3f, -1.75f);
-            var canvas = DemoUI.CreatePanel("ISDK_UI_Canvas", z, canvasPos, DemoUI.FacePoint(canvasPos, HeadPos), new Vector2(700f, 420f),
+            var canvas = DemoUI.CreatePanel("ISDK_4_UI_Canvas", z, canvasPos, DemoUI.FacePoint(canvasPos, HeadPos), new Vector2(700f, 420f),
                 new Color(0.12f, 0.08f, 0.2f, 0.92f));
             canvas.gameObject.AddComponent<GraphicRaycaster>();
             DemoUI.CreateText(canvas, "Title", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(20f, -90f), new Vector2(-20f, -10f), 30,
-                TextAnchor.UpperCenter, Color.white, "<b>Strefa Interaction SDK</b>\nprzycisk UI: poke palcem lub promień");
+                TextAnchor.UpperCenter, Color.white, "<b>Strefa Interaction SDK</b>\nprzycisk UI: dotknij palcem lub wskaż promieniem");
 
             var btnGO = new GameObject("ISDK_Button", typeof(RectTransform), typeof(Image), typeof(Button));
             var btnRt = (RectTransform)btnGO.transform;
@@ -766,19 +665,22 @@ namespace VRInputDemo.EditorTools
                 TextAnchor.MiddleCenter, new Color(1f, 0.9f, 0.5f), "Kliknięcia: 0");
             btnGO.AddComponent<IsdkButtonCounter>().label = counter;
 
-            // Tablica z opisem, co gdzie dodać.
+            // Podłoga dla bloku Teleport.
+            var tp = DemoUI.CreatePrimitive(PrimitiveType.Cube, "ISDK_5_Teleport_Podloga", z, new Vector3(0f, 0.005f, -3.3f),
+                new Vector3(2f, 0.01f, 2f), new Color(0.2f, 0.45f, 0.5f));
+            DemoUI.DisableShadows(tp);
+
+            // Tablica w VR z opisem stanowisk.
             Vector3 signPos = new Vector3(1.4f, 1.45f, -1.3f);
-            var sign = DemoUI.CreatePanel("ISDK_Info", z, signPos, DemoUI.FacePoint(signPos, HeadPos), new Vector2(900f, 640f), PanelBg);
-            DemoUI.CreateFillText(sign, "Text", 25f, 26, TextAnchor.UpperLeft, Color.white,
+            var sign = DemoUI.CreatePanel("ISDK_Info", z, signPos, DemoUI.FacePoint(signPos, HeadPos), new Vector2(820f, 520f), PanelBg);
+            DemoUI.CreateFillText(sign, "Text", 25f, 28, TextAnchor.UpperLeft, Color.white,
                 "<b><color=#C8A0FF>INTERACTION SDK</color></b>\n" +
-                "Obiekty w tej strefie obsługują komponenty ISDK, a nie skrypty demo.\n" +
-                "W edytorze: prawy klik na obiekcie w Hierarchy > Interaction SDK:\n\n" +
-                "• ISDK_Grab_* – Add Grab Interaction\n" +
-                "• ISDK_DistanceGrab_Walec – Add Distance Grab Interaction\n" +
-                "• ISDK_RayGrab_Kapsula – Add Ray Grab Interaction\n" +
-                "• ISDK_UI_Canvas – Add Poke / Ray Interaction to Canvas\n" +
-                "• ISDK_Teleport_Podloga – Add Teleport Interaction\n\n" +
-                "W kreatorze: Fix All, potem Create (doda też rig ISDK).");
+                "Te obiekty obsługują Building Blocks ISDK,\nnie skrypty demo.\n\n" +
+                "1  Grab – chwyć i rzuć\n" +
+                "2  Touch Hand Grab – palce obejmują kulę\n" +
+                "3  Distance Grab – chwyć z daleka\n" +
+                "4  Poke / Ray – przycisk UI\n" +
+                "5  Teleport – wskaż podłogę i przenieś się");
         }
 
         static void IsdkObject(Transform parent, string name, PrimitiveType type, Vector3 pos, Vector3 scale, Color color)
@@ -807,38 +709,6 @@ namespace VRInputDemo.EditorTools
             AssetDatabase.CreateFolder(parent, Path.GetFileName(path));
         }
 
-        static GameObject FindCorePrefab(Func<GameObject, bool> filter, Func<GameObject, int> score)
-        {
-            if (corePrefabsCache == null)
-            {
-                corePrefabsCache = new List<GameObject>();
-                if (AssetDatabase.IsValidFolder(CorePackage))
-                {
-                    foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { CorePackage }))
-                    {
-                        var go = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
-                        if (go != null) corePrefabsCache.Add(go);
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("[VRInputDemo] Nie znaleziono pakietu com.meta.xr.sdk.core.");
-                }
-            }
-
-            GameObject best = null;
-            int bestScore = int.MinValue;
-            foreach (var go in corePrefabsCache)
-            {
-                bool ok;
-                try { ok = filter(go); } catch { ok = false; }
-                if (!ok) continue;
-                int s = score != null ? score(go) : 0;
-                if (s > bestScore) { bestScore = s; best = go; }
-            }
-            return best;
-        }
-
         static Type FindType(string name)
         {
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -852,7 +722,7 @@ namespace VRInputDemo.EditorTools
         static object[] DefaultArgs(MethodInfo m) =>
             m.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : (p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null)).ToArray();
 
-        static bool SetEnum(Object target, string valueName, params string[] propertyNames)
+        static bool SetEnum(Object target, string valueName, bool warn, params string[] propertyNames)
         {
             if (target == null) return false;
             var so = new SerializedObject(target);
@@ -862,44 +732,19 @@ namespace VRInputDemo.EditorTools
                 if (p == null || p.propertyType != SerializedPropertyType.Enum) continue;
                 int i = Array.IndexOf(p.enumNames, valueName);
                 if (i < 0) continue;
-                p.enumValueIndex = i;
-                so.ApplyModifiedPropertiesWithoutUndo();
+                if (p.enumValueIndex != i)
+                {
+                    p.enumValueIndex = i;
+                    so.ApplyModifiedProperties();
+                }
                 return true;
             }
-            Debug.LogWarning($"[VRInputDemo] Nie ustawiono {valueName} na {target.GetType().Name} - ustaw ręcznie w Inspectorze.");
+            if (warn) Debug.LogWarning($"[VRInputDemo] Nie ustawiono {valueName} na {target.GetType().Name} - ustaw ręcznie w Inspectorze.");
             return false;
-        }
-
-        static void SetInt(Object target, int value, params string[] propertyNames)
-        {
-            if (target == null) return;
-            var so = new SerializedObject(target);
-            foreach (string pn in propertyNames)
-            {
-                var p = so.FindProperty(pn);
-                if (p == null) continue;
-                p.intValue = value;
-                so.ApplyModifiedPropertiesWithoutUndo();
-                return;
-            }
-        }
-
-        static void SetObjectReference(Object target, Object value, params string[] propertyNames)
-        {
-            if (target == null) return;
-            var so = new SerializedObject(target);
-            foreach (string pn in propertyNames)
-            {
-                var p = so.FindProperty(pn);
-                if (p == null || p.propertyType != SerializedPropertyType.ObjectReference) continue;
-                p.objectReferenceValue = value;
-                so.ApplyModifiedPropertiesWithoutUndo();
-                return;
-            }
         }
     }
 
-    /// <summary>Po otwarciu projektu: otwiera scenę demo albo proponuje jej zbudowanie.</summary>
+    /// <summary>Po otwarciu projektu: otwiera scenę demo albo proponuje konfigurację.</summary>
     [InitializeOnLoad]
     static class VRInputDemoFirstRun
     {
@@ -925,9 +770,11 @@ namespace VRInputDemo.EditorTools
             }
 
             if (EditorUtility.DisplayDialog("VR Input Demo",
-                    "Scena demo jeszcze nie istnieje.\n\nZalecana kolejność:\n" +
+                    "Scena demo jeszcze nie istnieje.\n\nKolejność (szczegóły w INSTRUKCJA.md):\n" +
                     "1. VR Input Demo > 1. Konfiguruj projekt dla Meta Quest\n" +
-                    "2. VR Input Demo > 2. Zbuduj scenę demo\n\nSkonfigurować projekt teraz?",
+                    "2. VR Input Demo > 2. Zbuduj scenę demo\n" +
+                    "3. Building Blocks: Camera Rig, Hand Tracking, Controller Tracking\n\n" +
+                    "Skonfigurować projekt teraz?",
                     "Konfiguruj teraz", "Później"))
             {
                 VRInputDemoSetup.ConfigureProject();

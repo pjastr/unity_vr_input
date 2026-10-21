@@ -32,12 +32,10 @@ namespace VRInputDemo
         public float microgestureStep = 0.75f;
 
         [Header("Współpraca z Interaction SDK")]
-        [Tooltip("Gdy w scenie jest rig Interaction SDK, ukryj własne modele dłoni/kontrolerów (ISDK rysuje swoje).")]
-        public bool hideOwnVisualsWhenIsdkRigPresent = true;
-        [Tooltip("Gdy w scenie jest rig Interaction SDK, wyłącz własną lokomocję gałkami (ISDK ma własną).")]
-        public bool disableOwnLocomotionWhenIsdkRigPresent;
-        [Tooltip("Renderery własnych dłoni i kontrolerów (uzupełnia skrypt budujący scenę).")]
-        public List<GameObject> ownVisualRoots = new List<GameObject>();
+        [Tooltip("Gdy w scenie jest blok Interactions Rig, ukryj modele z bloków Hand Tracking / Controller Tracking (ISDK rysuje własne dłonie i kontrolery).")]
+        public bool hideBlockVisualsWhenIsdkRigPresent = true;
+        [Tooltip("Gdy w scenie jest blok Interactions Rig, wyłącz chodzenie/obrót gałkami z demo (ISDK ma własny teleport i obrót na gałkach).")]
+        public bool disableOwnLocomotionWhenIsdkRigPresent = true;
 
         readonly List<GameObject> spawned = new List<GameObject>();
         bool gravityOn = true;
@@ -304,31 +302,36 @@ namespace VRInputDemo
         }
 
         /// <summary>
-        /// Wykrywa rig Interaction SDK dodany Quick Actionem lub Building Blockiem
-        /// (szuka obiektu z "InteractionRig" / "Interactions Rig" w nazwie).
+        /// Wykrywa blok "Interactions Rig" (szuka obiektu z "InteractionRig" / "Interactions Rig" w nazwie).
+        /// Gdy jest, ukrywa modele z bloków Hand Tracking / Controller Tracking (ISDK rysuje własne)
+        /// i opcjonalnie wyłącza lokomocję gałkami z demo. Dane dłoni (OVRHand) nadal działają dla gestów.
         /// </summary>
         void HandleIsdkRig()
         {
-            bool isdkPresent = false;
+            var isdkRoots = new List<Transform>();
             foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             {
                 string n = t.name.Replace(" ", "");
                 if (n.IndexOf("InteractionRig", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                     n.IndexOf("InteractionsRig", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    isdkPresent = true;
-                    break;
-                }
+                    isdkRoots.Add(t);
             }
-            if (!isdkPresent) return;
+            if (isdkRoots.Count == 0) return;
 
-            DemoLog.Add("Wykryto rig Interaction SDK - strefa ISDK aktywna.");
+            DemoLog.Add("Wykryto blok Interactions Rig - strefa ISDK aktywna.");
 
-            if (hideOwnVisualsWhenIsdkRigPresent)
+            if (hideBlockVisualsWhenIsdkRigPresent)
             {
-                foreach (var root in ownVisualRoots)
+                // Obiekty z bloków Hand Tracking (OVRHand) i Controller Tracking (OVRControllerHelper),
+                // które nie należą do rigu ISDK.
+                var visualRoots = new List<GameObject>();
+                foreach (var h in FindObjectsByType<OVRHand>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    if (!IsUnder(h.transform, isdkRoots)) visualRoots.Add(h.gameObject);
+                foreach (var b in FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    if (b.GetType().Name == "OVRControllerHelper" && !IsUnder(b.transform, isdkRoots)) visualRoots.Add(b.gameObject);
+
+                foreach (var root in visualRoots)
                 {
-                    if (root == null) continue;
                     // Komponenty Meta, które same włączają renderery co klatkę - najpierw je wyłączamy.
                     foreach (var b in root.GetComponentsInChildren<Behaviour>(true))
                     {
@@ -337,13 +340,17 @@ namespace VRInputDemo
                             b.enabled = false;
                     }
                     foreach (var r in root.GetComponentsInChildren<Renderer>(true)) r.enabled = false;
-                    foreach (var c in root.GetComponentsInChildren<ControllerVisibility>(true)) c.enabled = false;
-                    foreach (var v in root.GetComponentsInChildren<HandJointVisualizer>(true)) v.enabled = false;
                 }
             }
 
             if (disableOwnLocomotionWhenIsdkRigPresent && locomotion != null)
                 locomotion.enableThumbsticks = false;
+        }
+
+        static bool IsUnder(Transform t, List<Transform> roots)
+        {
+            foreach (var r in roots) if (t.IsChildOf(r)) return true;
+            return false;
         }
     }
 }

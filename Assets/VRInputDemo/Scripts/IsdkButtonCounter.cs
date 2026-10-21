@@ -5,7 +5,7 @@ namespace VRInputDemo
 {
     /// <summary>
     /// Licznik kliknięć przycisku UI w strefie ISDK. Sam przycisk jest zwykłym Unity UI Button -
-    /// "klikalny" palcem lub promieniem staje się po dodaniu Quick Action "Poke Canvas" / "Ray Canvas".
+    /// "klikalny" palcem lub promieniem staje się po nałożeniu bloków Poke Interaction / Ray Interaction.
     /// </summary>
     [RequireComponent(typeof(Button))]
     public class IsdkButtonCounter : MonoBehaviour

@@ -5,9 +5,9 @@ Projekt demonstracyjny pokazujący **różne sposoby wprowadzania danych w VR** 
 - **kontrolery Touch Plus** – przyciski, triggery, gripy, gałki, dotyk pojemnościowy, wibracje (`OVRInput`),
 - **śledzenie dłoni** – szczypnięcie (pinch), gesty statyczne (pięść, V, kciuk w górę/dół, wskazywanie, otwarta dłoń), mikrogesty kciuka (`OVRHand`, `OVRSkeleton`),
 - **akcje wywoływane tymi wejściami** – chwytanie i rzucanie, promień wskazujący, wciskanie przycisków palcem (poke), strzelanie, chodzenie i obrót, zmiana kolorów i grawitacji, reset sceny,
-- **osobna strefa Interaction SDK (ISDK)** – te same rodzaje interakcji zrobione gotowymi komponentami Meta (Quick Actions / Building Blocks).
+- **osobna strefa Interaction SDK (ISDK)** – te same rodzaje interakcji zrobione gotowymi blokami Meta.
 
-Scena składa się wyłącznie z **prymitywów Unity** (kostki, kule, walce, kapsuły, płaszczyzny), **paneli UI** oraz **rigów i prefabów z Meta XR SDK**. Nie ma żadnych zewnętrznych modeli ani tekstur.
+Scena składa się wyłącznie z **prymitywów Unity** (kostki, kule, walce, kapsuły, płaszczyzny), **paneli UI** oraz **Building Blocks z Meta XR SDK** (rig kamery, dłonie, kontrolery, interakcje ISDK). Nie ma żadnych zewnętrznych modeli ani tekstur.
 
 ---
 
@@ -60,7 +60,7 @@ unity_vr_input/
 ├─ ProjectSettings/ProjectVersion.txt
 └─ Assets/VRInputDemo/
    ├─ Editor/
-   │  └─ VRInputDemoSetup.cs      ← menu "VR Input Demo": konfiguracja, budowa sceny, Build & Run
+   │  └─ VRInputDemoSetup.cs      ← menu "VR Input Demo": konfiguracja, budowa sceny, sprawdzanie bloków, Build & Run
    ├─ Scripts/
    │  ├─ XRInputSource.cs         ← wspólne źródło wejścia: kontroler albo dłoń (rdzeń projektu)
    │  ├─ HandGestureDetector.cs   ← rozpoznawanie gestów i mikrogestów
@@ -75,15 +75,18 @@ unity_vr_input/
    │  ├─ HandInfoPanel.cs         ← panel na żywo: stan OVRHand i gesty
    │  ├─ DemoLog.cs / DemoLogPanel.cs ← dziennik zdarzeń (panel + logcat)
    │  ├─ DemoUI.cs, ColorTint.cs, DemoResources.cs ← pomocnicze (prymitywy, panele, kolory)
-   │  ├─ HandJointVisualizer.cs, ControllerVisibility.cs ← zapasowe wizualizacje
    │  ├─ Projectile.cs
    │  └─ IsdkZone.cs, IsdkButtonCounter.cs ← strefa Interaction SDK
-   ├─ Scenes/InputDemo.unity      ← tworzona przez menu (krok 2)
+   ├─ Scenes/InputDemo.unity      ← tworzona przez menu VR Input Demo › 2
    ├─ Materials/DemoLit.mat       ← tworzony automatycznie (URP/Lit)
    └─ Settings/VRInputDemo_URP*.asset ← tworzone automatycznie (URP)
 ```
 
-Scena jest **generowana skryptem edytora**, a nie zapisana na sztywno – dzięki temu działa z wersją Meta SDK, którą faktycznie masz zainstalowaną, i można ją w każdej chwili odbudować.
+Podział pracy:
+- **skrypt edytora** buduje otoczenie, obiekty, panele, logikę demo i stoliki strefy ISDK,
+- **Building Blocks** dostarczają wszystko, co pochodzi z Meta: rig kamery, dłonie, kontrolery i interakcje ISDK.
+
+Skrypty demo same znajdują w scenie `OVRCameraRig` i `OVRHand` z bloków – nic nie trzeba podpinać ręcznie.
 
 ---
 
@@ -100,7 +103,7 @@ Skrypt ustawia:
 - Android: **IL2CPP**, **ARM64**, **min. API 32**, **Vulkan**, orientacja pozioma, identyfikator `com.vrinputdemo.quest`,
 - **Linear** color space,
 - **URP**: tworzy `VRInputDemo_URP.asset` (MSAA 4×, bez HDR i bez tekstur głębi/koloru – ustawienia przyjazne dla Quest) i przypina go w Graphics/Quality,
-- **Hand Tracking Support = Controllers And Hands** (konfiguracja OVR),
+- **Hand Tracking Support = Controllers And Hands**,
 - **Development Build + Script Debugging** (do debugowania przez USB),
 - na koniec proponuje **przełączenie platformy na Android** – zgódź się (trwa kilka minut).
 
@@ -110,16 +113,27 @@ Skrypt ustawia:
 3. (Opcjonalnie) zakładka **Windows/Standalone**: to samo – pozwala testować przez Quest Link w trybie Play.
 
 ### Krok 3 – Project Setup Tool
-**Meta › Tools › Project Setup Tool** (w SDK 207 także *Window › Meta › Tools*). Na zakładce **Android** kliknij **Fix All**, potem **Apply All** dla zaleceń. Powtarzaj, aż nie zostaną błędy wymagane („Required”).
+**Meta › Tools › Project Setup Tool**. Na zakładce **Android** kliknij **Fix All**, potem **Apply All**. Powtarzaj, aż nie zostaną błędy wymagane („Required”).
 
 ### Krok 4 – `VR Input Demo › 2. Zbuduj scenę demo`
-Skrypt tworzy `Assets/VRInputDemo/Scenes/InputDemo.unity` i dodaje ją do listy scen builda. W scenie powstają:
-- **OVRCameraRig** (z prefabu Meta SDK) z **OVRManager** ustawionym na *Floor Level*,
-- **dłonie** (prefab `OVRHandPrefab` z siatką dłoni – lewa i prawa),
-- **modele kontrolerów** (prefab `OVRControllerPrefab`; jeśli go nie ma – prosty model z prymitywów),
-- otoczenie, stół, obiekty, przyciski, cele, panele i strefa ISDK (opis w punkcie 6).
+Tworzy `Assets/VRInputDemo/Scenes/InputDemo.unity` (otoczenie, stół, obiekty, przyciski, cele, panele, logika demo, stoliki strefy ISDK) i dodaje ją do listy scen builda. Scena nie ma jeszcze kamery VR – tę dają bloki w następnym kroku.
 
-> **Alternatywa – Building Blocks.** Jeśli wolisz rig z Building Blocks (**Meta › Tools › Building Blocks**: *Camera Rig*, *Hand Tracking*, *Controller Tracking*, opcjonalnie *Passthrough*), usuń z wygenerowanej sceny obiekt `OVRCameraRig` i dodaj bloki. Skrypty demo same znajdą `OVRCameraRig` i `OVRHand` w scenie (`XRInputSource.AutoWire`). Wtedy w obiekcie `Demo` (komponent *DemoActions*) uzupełnij listę **Own Visual Roots**, jeśli chcesz automatycznego ukrywania modeli przy rigu ISDK.
+### Krok 5 – Building Blocks
+Otwórz **Meta › Tools › Building Blocks** (w SDK 207 także *Window › Meta › Meta XR SDK › Building Blocks*). Dla każdego bloku z tabeli: znajdź kafelek i kliknij **Add Block**. Zależności dodają się same.
+
+| Blok | Po co | Wymagany |
+|---|---|---|
+| **Camera Rig** | kamera VR, `OVRManager`, punkty zaczepienia dłoni i kontrolerów | tak |
+| **Hand Tracking** | dane i model dłoni (`OVRHand`, `OVRSkeleton`) – potrzebne do gestów | tak |
+| **Controller Tracking** | modele kontrolerów | zalecany |
+| **Passthrough** | obraz z kamer gogli zamiast tła | nie |
+
+Bloki ISDK (strefa za plecami) opisuje [punkt 8](#8-strefa-interaction-sdk).
+
+### Krok 6 – `VR Input Demo › 3. Sprawdź bloki w scenie`
+Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym rigiem lub zbędną kamerą i od razu ustawia w `OVRManager` **Tracking Origin = Floor Level** (wysokość sceny = podłoga pokoju). Gdy wszystko jest `[OK]`, zapisz scenę (**Ctrl+S**).
+
+> Ponowne uruchomienie kroku 4 (np. po zmianach w skryptach) **odświeża** tylko obiekty demo – Building Blocks i strefa ISDK zostają w scenie.
 
 ---
 
@@ -137,8 +151,8 @@ Skrypt tworzy `Assets/VRInputDemo/Scenes/InputDemo.unity` i dodaje ją do listy 
    `<katalog Unity>\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\platform-tools\adb.exe`.
 
 ### Build & Run
-**Sposób A (najprostszy):** `VR Input Demo › 3. Build And Run (USB)`
-– buduje `Builds/VRInputDemo.apk` (Development + Script Debugging), instaluje na goglach i uruchamia.
+**Sposób A (najprostszy):** `VR Input Demo › 4. Build And Run (USB)`
+– sprawdza bloki w scenie, buduje `Builds/VRInputDemo.apk` (Development + Script Debugging), instaluje na goglach i uruchamia.
 
 **Sposób B (standardowy):** **File › Build Profiles**
 1. Wybierz platformę **Android** (lub profil **Meta Quest**, jeśli używasz Build Profiles) – musi być aktywna.
@@ -322,28 +336,44 @@ Gest musi być stabilny przez 0,12 s (oprócz pinch), żeby nie migotał przy pr
 
 ## 8. Strefa Interaction SDK
 
-Za plecami gracza jest strefa z obiektami przygotowanymi dla **Meta Interaction SDK**. Są tu celowo **bez komponentów ISDK** – dodajesz je jednym kliknięciem i widzisz, ile pracy ISDK robi za Ciebie (siatki dłoni dopasowujące się do obiektu, chwyt dwiema rękami, promienie, interakcje z UI, teleport).
+Za plecami gracza stoi stół z ponumerowanymi obiektami. **Bez bloków ISDK nic na nie nie reaguje** – to celowe: po dodaniu każdego bloku widać, co on wnosi.
 
-### Dodanie interakcji (Quick Actions)
-W **Hierarchy** kliknij obiekt **prawym przyciskiem › Interaction SDK** i wybierz akcję:
+```
+        [5] podłoga do teleportu
+            [4] panel UI z przyciskiem
+   ┌──────────── STÓŁ ISDK ────────────┐     [tablica z opisem]
+   │  [3] walec   [2] kula   [1] kostka │
+   └───────────────────────────────────┘
+                 ( TY – odwróć się )
+```
 
-| Obiekt | Quick Action |
-|---|---|
-| `ISDK_Grab_Kostka`, `ISDK_Grab_Kula` | **Add Grab Interaction** |
-| `ISDK_DistanceGrab_Walec` | **Add Distance Grab Interaction** |
-| `ISDK_RayGrab_Kapsula` | **Add Ray Grab Interaction** |
-| `ISDK_UI_Canvas` | **Add Poke Interaction to Canvas** oraz **Add Ray Interaction to Canvas** |
-| `ISDK_Teleport_Podloga` | **Add Teleport Interaction** |
+### Krok 1 – dodaj rig interakcji
+**Building Blocks › Interactions Rig › Add Block.**
+Rig trafia pod Camera Rig i zawiera interaktory chwytu, poke, promienia i teleportu – dla dłoni i kontrolerów.
 
-W kreatorze kliknij **Fix All** (doda brakujące elementy, m.in. **rig interakcji ISDK** pod `OVRCameraRig` i `PointableCanvasModule` na EventSystemie), a potem **Create**. Dokładne nazwy pozycji menu mogą się nieco różnić między wersjami SDK.
+### Krok 2 – nałóż bloki na obiekty
+Przeciągnij kafelek bloku z okna Building Blocks i **upuść go na obiekt** w Hierarchy (obiekty są pod `ISDK_Zone`):
 
-Zamiast Quick Actions możesz użyć **Building Blocks** (*Meta › Tools › Building Blocks*): najpierw **Interactions Rig**, potem przeciągnij na obiekt np. **Grab Interaction**, **Ray Interaction** lub **Poke Interaction**.
+| Obiekt | Blok | Co sprawdzić w goglach |
+|---|---|---|
+| `ISDK_1_Grab_Kostka` | **Grab Interaction** | chwyć (pinch lub grip), przełóż do drugiej ręki, rzuć |
+| `ISDK_2_TouchHandGrab_Kula` | **Touch Hand Grab** | chwyć dłonią – palce układają się na kuli |
+| `ISDK_3_DistanceGrab_Walec` | **Distance Grab** | wskaż walec z daleka i chwyć – przyleci do ręki |
+| `ISDK_4_UI_Canvas` | **Poke Interaction**, potem **Ray Interaction** | wciśnij przycisk palcem, potem promieniem – licznik rośnie |
+| `ISDK_5_Teleport_Podloga` | **Teleport** | wskaż podłogę i przenieś się |
 
-### Współistnienie z demo
-- Skrypty demo **nie chwytają** obiektów ISDK (nie mają komponentu `Grabbable`), a własny promień demo **chowa się nad strefą ISDK** (komponent `IsdkZone`), więc widać tylko promień ISDK.
-- Gdy w scenie jest rig ISDK, `DemoActions` automatycznie **ukrywa własne modele dłoni i kontrolerów** (ISDK rysuje swoje), żeby nie było podwójnych dłoni. Opcja: *Demo › DemoActions › Hide Own Visuals When Isdk Rig Present*.
-- Jeśli rig ISDK ma własną lokomocję na gałkach i obie się dublują, zaznacz *Disable Own Locomotion When Isdk Rig Present*.
-- Kliknięcia przycisku UI są liczone (`IsdkButtonCounter`) i trafiają do dziennika zdarzeń.
+> Jeśli Twoja wersja SDK zamiast nałożyć blok na obiekt doda własny obiekt przykładowy, przenieś go w Hierarchy do `ISDK_Zone`, ustaw w miejscu naszego prymitywu, a prymityw usuń.
+
+### Krok 3 – zapisz i sprawdź
+**Ctrl+S**, potem **VR Input Demo › 3. Sprawdź bloki w scenie** – wiersz *Interactions Rig* powinien mieć `[OK]`.
+
+### Jak demo zachowuje się przy rigu ISDK
+Przy starcie demo wykrywa blok Interactions Rig i:
+- **ukrywa modele dłoni i kontrolerów** z bloków Hand Tracking / Controller Tracking – ISDK rysuje własne, więc nie ma podwójnych dłoni (gesty demo działają dalej),
+- **wyłącza chodzenie i obrót gałkami** z demo – gałki przejmuje ISDK (teleport, obrót); mikrogesty dłoni działają dalej,
+- **chowa własny promień** nad obiektami strefy ISDK; skrypty demo nie chwytają obiektów ISDK.
+
+Oba zachowania można wyłączyć w obiekcie **Demo › DemoActions**: *Hide Block Visuals When Isdk Rig Present* i *Disable Own Locomotion When Isdk Rig Present*. Usunięcie bloku Interactions Rig przywraca pełne zachowanie demo.
 
 ---
 
@@ -370,31 +400,34 @@ else if (g.Current == HandGesture.OpenPalm && held > 0.5f)
 
 **Nowy gest** – dodaj wartość do `HandGesture` i warunek w `HandGestureDetector.Classify()` (masz do dyspozycji `Ratios[0..4]`, `ThumbDirection`, `PalmCenter`, `IndexTip`).
 
-**Odbudowa sceny** – po zmianach w `VRInputDemoSetup.cs` uruchom ponownie *VR Input Demo › 2. Zbuduj scenę demo* (scena zostanie nadpisana).
+**Odświeżenie sceny** – po zmianach w `VRInputDemoSetup.cs` uruchom ponownie *VR Input Demo › 2. Zbuduj scenę demo*. Obiekty demo powstaną od nowa, a Building Blocks i strefa ISDK zostaną. Aby odbudować także strefę ISDK, usuń wcześniej obiekt `ISDK_Zone` (bloki ISDK trzeba wtedy nałożyć ponownie).
 
 ---
 
 ## 10. Rozwiązywanie problemów
 
+Zacznij od **VR Input Demo › 3. Sprawdź bloki w scenie** – wskazuje większość problemów ze sceną.
+
 | Problem | Rozwiązanie |
 |---|---|
 | Gogle nie są widoczne w *Run Device* / `adb devices` | Kabel z transmisją danych, potwierdź „Zezwól na debugowanie USB” w goglach, zainstaluj MQDH (sterownik ADB), sprawdź tryb dewelopera. |
-| `unauthorized` w `adb devices` | Odłącz i podłącz kabel, potwierdź okno w goglach (zdejmij je na chwilę, jeśli okno jest „za Tobą”). |
-| Aplikacja startuje jako płaskie okno 2D | Nie zaznaczono **OpenXR + Meta XR** w *XR Plug-in Management › Android* (krok 2). |
-| Stół jest na wysokości głowy / pod podłogą | `OVRCameraRig › OVRManager › Tracking Origin Type` ustaw na **Floor Level**. Zresetuj też granicę (Guardian) w goglach. |
+| `unauthorized` w `adb devices` | Odłącz i podłącz kabel, potwierdź okno w goglach. |
+| Aplikacja startuje jako płaskie okno 2D | Nie zaznaczono **OpenXR + Meta XR** w *XR Plug-in Management › Android* (krok 2) albo brak bloku **Camera Rig**. |
+| Obraz zdublowany / dwie kamery | W scenie są dwa rigi lub zostawiona *Main Camera* – zostaw jeden blok Camera Rig. |
+| Stół na wysokości głowy / pod podłogą | Uruchom *3. Sprawdź bloki* (ustawia Floor Level) i zresetuj granicę (Guardian) w goglach. |
 | Czarny ekran / błędy URP | Uruchom ponownie krok 1 (przypina URP) i *Project Setup Tool › Fix All*. |
-| Dłonie nie są śledzone | Włącz śledzenie dłoni w goglach; sprawdź *OVRManager › Quest Features › Hand Tracking Support = Controllers And Hands*; odłóż kontrolery. |
-| Dłonie są niewidoczne lub odwrócone | Usuń `LeftHand`/`RightHand` spod anchorów rigu i dodaj Building Block **Hand Tracking**; demo samo wykryje nowe `OVRHand`. |
+| Panel „Dłonie” pisze „Brak OVRHand” | Dodaj blok **Hand Tracking**. |
+| Dłonie nie są śledzone | Włącz śledzenie dłoni w goglach i odłóż kontrolery; sprawdź *OVRManager › Quest Features › Hand Tracking Support = Controllers And Hands*. |
 | Gesty rozpoznają się źle | Dostrój progi (punkt 9) na podstawie wartości z panelu „Dłonie”. |
-| Mikrogesty nie działają | Wymagają aktualnego Horizon OS i śledzenia dłoni; sprawdź w *Project Setup Tool* / *OVRManager*, czy nie ma zaleceń dotyczących mikrogestów. |
-| Podwójne dłonie po dodaniu ISDK | Upewnij się, że w `DemoActions` zaznaczone jest *Hide Own Visuals When Isdk Rig Present*. |
+| Mikrogesty nie działają | Wymagają aktualnego Horizon OS i śledzenia dłoni; sprawdź zalecenia w *Project Setup Tool*. |
+| Podwójne dłonie po dodaniu ISDK | W *Demo › DemoActions* zaznacz *Hide Block Visuals When Isdk Rig Present*. |
+| Gałki nie poruszają graczem | Jest blok Interactions Rig – lokomocję przejmuje ISDK (punkt 8); możesz to zmienić w *DemoActions*. |
 | Brak logów w Console | Build musi być *Development*; w Console wybierz gogle z listy połączeń albo użyj `adb logcat -s Unity`. |
-| Błędy kompilacji po aktualizacji Meta SDK | Zgłoś nazwę błędu – kod używa podstawowego API (`OVRInput`, `OVRHand`, `OVRSkeleton`), które rzadko się zmienia. |
 
 ---
 
 ### Przydatne linki
+- [Meta – Building Blocks](https://developers.meta.com/horizon/documentation/unity/bb-overview/)
 - [Meta – Unity project setup](https://developers.meta.com/horizon/documentation/unity/unity-project-setup/)
 - [Meta – ręczna konfiguracja (OpenXR, Project Setup Tool)](https://developers.meta.com/horizon/documentation/unity/unity-tutorial-hello-world-manual-steps/)
-- [Meta – Interaction SDK Quick Actions](https://developers.meta.com/horizon/documentation/unity/unity-isdk-quick-actions/)
 - [Meta – API OVRHand](https://developers.meta.com/horizon/reference/unity/v207/class_o_v_r_hand) · [OVRSkeleton](https://developers.meta.com/horizon/reference/unity/v207/class_o_v_r_skeleton) · [OVRCameraRig](https://developers.meta.com/horizon/reference/unity/v207/class_o_v_r_camera_rig)

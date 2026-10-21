@@ -14,7 +14,7 @@ namespace VRInputDemo
     [DefaultExecutionOrder(100)]
     public class XRInputSource : MonoBehaviour
     {
-        [Header("Powiązania (uzupełniane automatycznie, jeśli puste)")]
+        [Header("Powiązania (puste = wyszukiwane automatycznie w blokach Camera Rig i Hand Tracking)")]
         public HandSide side = HandSide.Left;
         public OVRCameraRig rig;
         public OVRHand hand;
@@ -81,6 +81,7 @@ namespace VRInputDemo
         Quaternion previousRotation = Quaternion.identity;
         bool grabbedWithFist;
         float hapticEnd = -1f;
+        float nextAutoWire;
         Transform pokeMarker;
 
         void Awake()
@@ -146,6 +147,13 @@ namespace VRInputDemo
 
         void Update()
         {
+            // Building Blocks mogą pojawić się w scenie później (np. po przeładowaniu) - ponawiamy wyszukiwanie co sekundę.
+            if ((rig == null || hand == null) && Time.unscaledTime >= nextAutoWire)
+            {
+                nextAutoWire = Time.unscaledTime + 1f;
+                AutoWire();
+            }
+
             bool handTracked = hand != null && hand.isActiveAndEnabled && hand.IsTracked;
             bool systemGesture = handTracked && hand.IsSystemGestureInProgress;
 
