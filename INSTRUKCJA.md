@@ -33,8 +33,7 @@ Scena składa się wyłącznie z **prymitywów Unity** (kostki, kule, walce, kap
 | Unity | **6000.3.24f1** (Unity 6.3 LTS) z modułem **Android Build Support** (w tym *OpenJDK* oraz *Android SDK & NDK Tools*) – instalacja przez Unity Hub › Installs › Add modules |
 | Gogle | Meta Quest 3S z aktualnym Horizon OS, **tryb deweloperski włączony** |
 | Kabel | USB-C z transmisją danych (nie tylko do ładowania) |
-| Konto | Konto Meta z utworzoną organizacją deweloperską (potrzebne do włączenia trybu deweloperskiego) |
-| Windows | Sterownik ADB dla Quest – najprościej zainstalować **Meta Quest Developer Hub (MQDH)**; bez niego Unity nie widzi gogli |
+
 
 Pakiety są wpisane w `Packages/manifest.json` i instalują się same przy pierwszym otwarciu projektu:
 
@@ -110,7 +109,7 @@ Skrypt ustawia:
 ### Krok 2 – XR Plug-in Management (ręcznie, jednorazowo)
 1. **Edit › Project Settings › XR Plug-in Management**.
 2. Zakładka **Android** (ikona robota): zaznacz **OpenXR**, a poniżej grupę funkcji **Meta XR**.
-3. (Opcjonalnie) zakładka **Windows/Standalone**: to samo – pozwala testować przez Quest Link w trybie Play.
+
 
 ### Krok 3 – Project Setup Tool
 **Meta › Tools › Project Setup Tool**. Na zakładce **Android** kliknij **Fix All**, potem **Apply All**. Powtarzaj, aż nie zostaną błędy wymagane („Required”).
@@ -128,7 +127,7 @@ Otwórz **Meta › Tools › Building Blocks** (w SDK 207 także *Window › Met
 | **Controller Tracking** | modele kontrolerów | zalecany |
 | **Passthrough** | obraz z kamer gogli zamiast tła | nie |
 
-Bloki ISDK (strefa za plecami) opisuje [punkt 8](#8-strefa-interaction-sdk) – możesz je dodać od razu albo później.
+Bloki ISDK (strefa za plecami) opisuje [punkt 7](#7-strefa-interaction-sdk) – możesz je dodać później.
 
 ### Krok 6 – `VR Input Demo › 3. Sprawdź bloki w scenie`
 Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym rigiem lub zbędną kamerą i od razu ustawia w `OVRManager` **Tracking Origin = Floor Level** (wysokość sceny = podłoga pokoju). Gdy wszystko jest `[OK]`, zapisz scenę (**Ctrl+S**).
@@ -148,6 +147,7 @@ Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym
 ### Build & Run
 **Sposób A (najprostszy):** `VR Input Demo › 4. Build And Run (USB)`
 – sprawdza bloki w scenie, buduje `Builds/VRInputDemo.apk` (Development + Script Debugging), instaluje na goglach i uruchamia.
+- warto zoptymalizować pod kątem czasu kompilacji. 
 
 **Sposób B (standardowy):** **File › Build Profiles**
 1. Wybierz platformę **Android** (lub profil **Meta Quest**, jeśli używasz Build Profiles) – musi być aktywna.
@@ -157,22 +157,11 @@ Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym
 
 Aplikacja uruchomi się w goglach automatycznie. Później znajdziesz ją w **Biblioteka › Nieznane źródła** (*Unknown Sources*).
 
----
 
-## 5. Debugowanie przez USB
-
-| Co | Jak |
-|---|---|
-| **Logi w edytorze** | Okno **Console** › lista *Editor* (lewy górny róg) › wybierz gogle (*AndroidPlayer…*). Działa dla Development Build. |
-| **Logi systemowe gogli** | Pakiet **Android Logcat** (Package Manager › Unity Registry › *Android Logcat*) › *Window › Analysis › Android Logcat*. Filtr: `VRInputDemo` – każde zdarzenie demo ma ten prefiks. |
-| **Debugger C# (breakpointy)** | Build z *Script Debugging*. Visual Studio: **Debug › Attach Unity Debugger** › wybierz gogle (USB). Rider: **Run › Attach to Unity Process**. Aby złapać kod startowy, zaznacz w buildzie **Wait For Managed Debugger**. |
-| **Profiler** | **Window › Analysis › Profiler** › lista *Play Mode/Editor* › wybierz gogle. |
-
-Każda akcja w demo trafia jednocześnie na panel **Dziennik zdarzeń** w VR i do logów w edytorze (Console / Android Logcat) – łatwo porównać to, co się dzieje w goglach, z tym, co widzi komputer.
 
 ---
 
-## 6. Instrukcja obsługi w goglach
+## 5. Instrukcja obsługi w goglach
 
 ### Układ sceny (widok z góry, patrzysz w stronę „przodu”)
 
@@ -243,9 +232,9 @@ Na panelu **DŁONIE** widać: czy dłoń jest śledzona i z jaką pewnością, r
 
 ---
 
-## 7. Jak to działa
+## 6. Jak to działa
 
-### 7.1 Architektura
+### 6.1 Architektura
 
 ```
 OVRManager ──► OVRInput (kontrolery)          OVRHand + OVRSkeleton (dłonie)
@@ -266,7 +255,7 @@ OVRManager ──► OVRInput (kontrolery)          OVRHand + OVRSkeleton (dłon
 
 Kluczowa idea: **`XRInputSource` tłumaczy kontroler i dłoń na te same, abstrakcyjne akcje** („wybierz”, „chwyć”, „punkt chwytu”, „promień”, „punkt poke”). Dzięki temu chwytanie, promień i przyciski mają jedną implementację, która działa zarówno z kontrolerami, jak i z dłońmi – a przełączanie następuje automatycznie, gdy odłożysz kontrolery.
 
-### 7.2 Kontrolery – `OVRInput`
+### 6.2 Kontrolery – `OVRInput`
 `OVRManager` co klatkę wywołuje `OVRInput.Update()`, a skrypty odczytują stan:
 
 ```csharp
@@ -289,7 +278,7 @@ OVRInput.SetControllerVibration(0.6f, 0.5f, OVRInput.Controller.RTouch);
 
 `Button.One/Two` oznaczają **A/B** z maską `RTouch` i **X/Y** z maską `LTouch` („Primary” zawsze odnosi się do wskazanego kontrolera). Trigger i grip są zamieniane na zdarzenia z **histerezą** (wciśnięcie > 0,55, puszczenie < 0,35), żeby uniknąć „drgania” na granicy progu.
 
-### 7.3 Dłonie – `OVRHand`
+### 6.3 Dłonie – `OVRHand`
 ```csharp
 bool tracked   = hand.IsTracked;
 bool pinching  = hand.GetFingerIsPinching(OVRHand.HandFinger.Index);   // pinch kciuk+wskazujący
@@ -299,7 +288,7 @@ var micro      = hand.GetMicrogestureType();                            // Swipe
 ```
 Promień z dłoni korzysta z **`PointerPose`** – systemowej pozy wyliczanej z ramienia i dłoni (stabilniejszej niż kierunek samego palca).
 
-### 7.4 Rozpoznawanie gestów – `HandGestureDetector`
+### 6.4 Rozpoznawanie gestów – `HandGestureDetector`
 Dla każdego palca liczony jest **współczynnik wyprostu**:
 
 ```
@@ -321,7 +310,7 @@ Gest musi być stabilny przez 0,12 s (oprócz pinch), żeby nie migotał przy pr
 
 **Mikrogesty** to małe ruchy kciuka po boku palca wskazującego (przesunięcia w 4 kierunkach i stuknięcie), rozpoznawane przez system. Demo używa ich do poruszania się bez kontrolerów.
 
-### 7.5 Akcje
+### 6.5 Akcje
 - **Chwytanie (`SimpleGrabber`)** – w promieniu 7 cm (kontroler) / 9 cm (dłoń) od punktu chwytu szuka najbliższego `Grabbable`. Po chwycie obiekt staje się kinematyczny i podąża za ręką z zachowaniem przesunięcia. Przy puszczeniu dostaje **prędkość ręki** – z `OVRInput.GetLocalControllerVelocity` dla kontrolera, a dla dłoni liczoną z historii pozycji z ostatnich klatek.
 - **Promień (`RayPointer`)** – `Physics.Raycast` z pozy wskaźnika. Kolor promienia: biały (nic), turkusowy (coś interaktywnego), żółty (trwa wybór). Przyciąganie obiektu to rzut balistyczny: `v = d/t − ½·g·t`.
 - **Poke (`PokeButton`)** – bez fizyki: co klatkę pozycja czubka palca/kontrolera jest przeliczana do układu przycisku. Wciśnięcie liczy się tylko przy wejściu **od góry** i przekroczeniu 70% skoku – boczne muśnięcie nie wciska.
@@ -330,7 +319,7 @@ Gest musi być stabilny przez 0,12 s (oprócz pinch), żeby nie migotał przy pr
 
 ---
 
-## 8. Strefa Interaction SDK
+## 7. Strefa Interaction SDK
 
 Za plecami gracza stoi stół ISDK z **6 ponumerowanymi stanowiskami**. Na każde trafia gotowy obiekt utworzony przez jeden Building Block ISDK. Bloki tworzą kompletne, podpięte obiekty same – nie nakłada się ich na prymitywy demo.
 
@@ -381,7 +370,7 @@ Oba zachowania można wyłączyć w obiekcie **Demo › DemoActions**: *Hide Blo
 
 ---
 
-## 9. Dostrajanie i rozbudowa
+## 8. Dostrajanie i rozbudowa
 
 **Progi gestów** – obiekt `InputSources/LeftInput` (i `RightInput`) › komponent **Hand Gesture Detector**. Odczytaj współczynniki z panelu „Dłonie” dla swojej dłoni i dopasuj *Finger Extended Ratio*, *Finger Curled Ratio*, *Thumb Extended Ratio*.
 
@@ -408,7 +397,7 @@ else if (g.Current == HandGesture.OpenPalm && held > 0.5f)
 
 ---
 
-## 10. Rozwiązywanie problemów
+## 9. Rozwiązywanie problemów
 
 Zacznij od **VR Input Demo › 3. Sprawdź bloki w scenie** – wskazuje większość problemów ze sceną.
 
