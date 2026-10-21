@@ -60,7 +60,7 @@ unity_vr_input/
 ├─ ProjectSettings/ProjectVersion.txt
 └─ Assets/VRInputDemo/
    ├─ Editor/
-   │  └─ VRInputDemoSetup.cs      ← menu "VR Input Demo": konfiguracja, budowa sceny, sprawdzanie bloków, Build & Run
+   │  └─ VRInputDemoSetup.cs      ← menu "VR Input Demo": konfiguracja, budowa sceny, sprawdzanie i układanie bloków, Build & Run
    ├─ Scripts/
    │  ├─ XRInputSource.cs         ← wspólne źródło wejścia: kontroler albo dłoń (rdzeń projektu)
    │  ├─ HandGestureDetector.cs   ← rozpoznawanie gestów i mikrogestów
@@ -119,7 +119,7 @@ Skrypt ustawia:
 Tworzy `Assets/VRInputDemo/Scenes/InputDemo.unity` (otoczenie, stół, obiekty, przyciski, cele, panele, logika demo, stoliki strefy ISDK) i dodaje ją do listy scen builda. Scena nie ma jeszcze kamery VR – tę dają bloki w następnym kroku.
 
 ### Krok 5 – Building Blocks
-Otwórz **Meta › Tools › Building Blocks** (w SDK 207 także *Window › Meta › Meta XR SDK › Building Blocks*). Dla każdego bloku z tabeli: znajdź kafelek i kliknij **Add Block**. Zależności dodają się same.
+Otwórz **Meta › Tools › Building Blocks** (w SDK 207 także *Window › Meta › Meta XR SDK › Building Blocks*). Dla każdego bloku z tabeli: **kliknij w puste miejsce w Hierarchy** (nic nie może być zaznaczone), znajdź kafelek i kliknij **Add Block**. Zależności dodają się same.
 
 | Blok | Po co | Wymagany |
 |---|---|---|
@@ -128,7 +128,7 @@ Otwórz **Meta › Tools › Building Blocks** (w SDK 207 także *Window › Met
 | **Controller Tracking** | modele kontrolerów | zalecany |
 | **Passthrough** | obraz z kamer gogli zamiast tła | nie |
 
-Bloki ISDK (strefa za plecami) opisuje [punkt 8](#8-strefa-interaction-sdk).
+Bloki ISDK (strefa za plecami) opisuje [punkt 8](#8-strefa-interaction-sdk) – możesz je dodać od razu albo później.
 
 ### Krok 6 – `VR Input Demo › 3. Sprawdź bloki w scenie`
 Pokazuje raport `[OK]` / `[BRAK]` dla każdego bloku, ostrzega przed zdublowanym rigiem lub zbędną kamerą i od razu ustawia w `OVRManager` **Tracking Origin = Floor Level** (wysokość sceny = podłoga pokoju). Gdy wszystko jest `[OK]`, zapisz scenę (**Ctrl+S**).
