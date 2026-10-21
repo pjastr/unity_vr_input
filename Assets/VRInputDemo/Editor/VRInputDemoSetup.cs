@@ -22,6 +22,7 @@ namespace VRInputDemo.EditorTools
     ///  2. Zbuduj scenę demo - otoczenie z prymitywów, panele, logika demo i strefa ISDK.
     ///     Rig, dłonie, kontrolery i interakcje ISDK dodaje się z okna Building Blocks.
     ///  3. Sprawdź bloki w scenie - raport, których Building Blocks brakuje.
+    ///  Ułóż bloki ISDK na stanowiskach - przenosi obiekty utworzone przez bloki ISDK na stół strefy ISDK.
     ///  4. Build And Run (USB) - buduje APK (Development + Script Debugging) i uruchamia na goglach.
     /// </summary>
     public static class VRInputDemoSetup
@@ -104,7 +105,7 @@ namespace VRInputDemo.EditorTools
             if (exists && !EditorUtility.DisplayDialog("VR Input Demo",
                     "Scena już istnieje. Odświeżyć zawartość demo?\n\n" +
                     "• Building Blocks (Camera Rig, Hand Tracking, Controller Tracking, Interactions Rig) zostaną zachowane.\n" +
-                    "• Strefa ISDK (" + IsdkZoneName + ") też zostanie zachowana. Aby ją odbudować, usuń ją ze sceny przed odświeżeniem.",
+                    "• Strefa ISDK (" + IsdkZoneName + ") z dodanymi blokami też zostanie zachowana.",
                     "Odśwież", "Anuluj"))
                 return;
 
@@ -142,6 +143,15 @@ namespace VRInputDemo.EditorTools
                 var panels = new GameObject("Panels");
                 BuildPanels(panels.transform, leftSrc, rightSrc);
 
+                var oldZone = GameObject.Find(IsdkZoneName);
+                if (oldZone != null && oldZone.transform.Find("ISDK_4_UI_Canvas") != null &&
+                    EditorUtility.DisplayDialog("VR Input Demo",
+                        "Strefa ISDK ma stary układ (prymitywy i panel UI). Przebudować ją na stanowiska dla bloków?\n\n" +
+                        "Bloki ISDK dodane do starej strefy zostaną usunięte – dodasz je ponownie (punkt 8 instrukcji).",
+                        "Przebuduj strefę", "Zostaw"))
+                {
+                    Object.DestroyImmediate(oldZone);
+                }
                 if (GameObject.Find(IsdkZoneName) == null) BuildIsdkZone();
 
                 var demo = new GameObject("Demo");
@@ -217,6 +227,17 @@ namespace VRInputDemo.EditorTools
             bool isdkRig = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                 .Any(t => IsIsdkRigName(t.name));
             Line(sb, isdkRig, "Interactions Rig", isdkRig ? "OK" : "brak – potrzebny tylko dla strefy ISDK (punkt 8 instrukcji)");
+            if (isdkRig)
+            {
+                var blockKeys = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                    .Where(t => t.name.StartsWith("[BuildingBlock]") && !IsNonIsdkBlock(t))
+                    .Select(t => MatchStation(BlockKey(t))).Where(st => st != null).Distinct().ToList();
+                int found = blockKeys.Count;
+                sb.Append("         bloki ISDK: ").Append(found).Append('/').Append(IsdkStations.Length);
+                if (found < IsdkStations.Length)
+                    sb.Append(" (brak: ").Append(string.Join(", ", IsdkStations.Where(st => !blockKeys.Contains(st)).Select(st => st.block))).Append(')');
+                sb.AppendLine();
+            }
 
             // Zbędna kamera spoza rigu (np. domyślna Main Camera).
             var strayCameras = Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None)
@@ -627,8 +648,42 @@ namespace VRInputDemo.EditorTools
             "<color=#C8A0FF>Za Tobą: strefa Interaction SDK (obiekty z Building Blocks ISDK).</color>";
 
         // =====================================================================
-        // STREFA INTERACTION SDK (obiekty docelowe dla Building Blocks)
+        // STREFA INTERACTION SDK – stanowiska dla samodzielnych obiektów z Building Blocks
         // =====================================================================
+
+        /// <summary>Stanowisko w strefie ISDK: gdzie położyć obiekt z danego bloku.</summary>
+        class IsdkStation
+        {
+            public string name;        // nazwa obiektu stanowiska w scenie
+            public string block;       // nazwa bloku w oknie Building Blocks
+            public string hint;        // co sprawdzić w goglach
+            public string[] keywords;  // fragment nazwy obiektu bloku lub jego komponentów (małe litery, bez spacji)
+            public Vector3 position;   // pozycja stanowiska (świat)
+            public Vector3 blockOffset;// gdzie położyć obiekt bloku względem stanowiska
+            public float yaw;          // obrót obiektu bloku wokół Y
+            public float scale;        // 0 = zostaw skalę nadaną przez blok
+        }
+
+        // Gracz po odwróceniu patrzy w stronę -Z, więc obiekty płaskie (przycisk, cel) obracamy o 180°.
+        static readonly IsdkStation[] IsdkStations =
+        {
+            new IsdkStation { name = "Stanowisko_1_Grab", block = "Grab Interaction", hint = "chwyć i rzuć",
+                keywords = new[] { "grab" }, position = new Vector3(0.45f, 0.8f, -0.95f), blockOffset = new Vector3(0f, 0.08f, 0f) },
+            new IsdkStation { name = "Stanowisko_2_TouchHandGrab", block = "Touch Hand Grab", hint = "chwyć dłonią – palce obejmują obiekt",
+                keywords = new[] { "touch" }, position = new Vector3(0.1f, 0.8f, -0.95f), blockOffset = new Vector3(0f, 0.08f, 0f) },
+            new IsdkStation { name = "Stanowisko_3_DistanceGrab", block = "Distance Grab", hint = "chwyć z daleka",
+                keywords = new[] { "distance" }, position = new Vector3(-0.4f, 0.8f, -1.15f), blockOffset = new Vector3(0f, 0.08f, 0f) },
+            new IsdkStation { name = "Stanowisko_4_Poke", block = "Poke Interaction", hint = "wciśnij przycisk palcem / kontrolerem",
+                keywords = new[] { "poke" }, position = new Vector3(-0.45f, 0.8f, -0.8f), blockOffset = new Vector3(0f, 0.2f, 0f), yaw = 180f },
+            new IsdkStation { name = "Stanowisko_5_Ray", block = "Ray Interaction", hint = "wskaż promieniem i wybierz",
+                keywords = new[] { "rayinteract" }, position = new Vector3(0f, 1.5f, -2.3f), blockOffset = Vector3.zero, yaw = 180f, scale = 0.5f },
+            new IsdkStation { name = "Stanowisko_6_Teleport", block = "Teleport", hint = "wskaż miejsce i przenieś się",
+                keywords = new[] { "teleport" }, position = new Vector3(0f, 0f, -3.3f), blockOffset = Vector3.zero },
+        };
+
+        // Bloki, których nie ruszamy (rig, dłonie, kontrolery itp.).
+        static readonly string[] NonIsdkBlockKeywords =
+            { "camerarig", "handtracking", "controllertracking", "interactionrig", "interactionsrig", "passthrough" };
 
         static void BuildIsdkZone()
         {
@@ -638,56 +693,145 @@ namespace VRInputDemo.EditorTools
 
             CreateTable(z, "ISDK_Table", new Vector3(0f, 0f, -1.0f), new Vector2(1.4f, 0.6f));
 
-            IsdkObject(z, "ISDK_1_Grab_Kostka", PrimitiveType.Cube, new Vector3(0.45f, 0.845f, -0.95f), Vector3.one * 0.08f, new Color(0.75f, 0.45f, 1f));
-            IsdkObject(z, "ISDK_2_TouchHandGrab_Kula", PrimitiveType.Sphere, new Vector3(0.15f, 0.85f, -0.95f), Vector3.one * 0.09f, new Color(0.55f, 0.4f, 0.95f));
-            IsdkObject(z, "ISDK_3_DistanceGrab_Walec", PrimitiveType.Cylinder, new Vector3(-0.3f, 0.855f, -1.15f), new Vector3(0.07f, 0.05f, 0.07f), new Color(0.4f, 0.8f, 0.9f));
+            for (int i = 0; i < IsdkStations.Length; i++)
+            {
+                var st = IsdkStations[i];
+                var stationGo = new GameObject(st.name);
+                stationGo.transform.SetParent(z, false);
+                stationGo.transform.position = st.position;
 
-            // Panel UI dla bloków Poke Interaction i Ray Interaction.
-            Vector3 canvasPos = new Vector3(0f, 1.3f, -1.75f);
-            var canvas = DemoUI.CreatePanel("ISDK_4_UI_Canvas", z, canvasPos, DemoUI.FacePoint(canvasPos, HeadPos), new Vector2(700f, 420f),
-                new Color(0.12f, 0.08f, 0.2f, 0.92f));
-            canvas.gameObject.AddComponent<GraphicRaycaster>();
-            DemoUI.CreateText(canvas, "Title", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(20f, -90f), new Vector2(-20f, -10f), 30,
-                TextAnchor.UpperCenter, Color.white, "<b>Strefa Interaction SDK</b>\nprzycisk UI: dotknij palcem lub wskaż promieniem");
-
-            var btnGO = new GameObject("ISDK_Button", typeof(RectTransform), typeof(Image), typeof(Button));
-            var btnRt = (RectTransform)btnGO.transform;
-            btnRt.SetParent(canvas, false);
-            btnRt.sizeDelta = new Vector2(380f, 120f);
-            btnRt.anchoredPosition = new Vector2(0f, -10f);
-            var img = btnGO.GetComponent<Image>();
-            img.color = new Color(0.3f, 0.45f, 0.95f);
-            var btn = btnGO.GetComponent<Button>();
-            btn.targetGraphic = img;
-            DemoUI.CreateFillText(btnRt, "Label", 8f, 36, TextAnchor.MiddleCenter, Color.white, "Kliknij mnie");
-
-            var counter = DemoUI.CreateText(canvas, "Counter", new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(20f, 20f), new Vector2(-20f, 80f), 30,
-                TextAnchor.MiddleCenter, new Color(1f, 0.9f, 0.5f), "Kliknięcia: 0");
-            btnGO.AddComponent<IsdkButtonCounter>().label = counter;
-
-            // Podłoga dla bloku Teleport.
-            var tp = DemoUI.CreatePrimitive(PrimitiveType.Cube, "ISDK_5_Teleport_Podloga", z, new Vector3(0f, 0.005f, -3.3f),
-                new Vector3(2f, 0.01f, 2f), new Color(0.2f, 0.45f, 0.5f));
-            DemoUI.DisableShadows(tp);
+                // Płaski znacznik miejsca (bez kolidera) i podpis.
+                bool onFloor = st.position.y < 0.1f;
+                bool floating = st.position.y > 1f;
+                if (!floating)
+                {
+                    var marker = DemoUI.CreatePrimitive(PrimitiveType.Cylinder, "Marker", stationGo.transform, new Vector3(0f, 0.003f, 0f),
+                        onFloor ? new Vector3(2f, 0.002f, 2f) : new Vector3(0.14f, 0.002f, 0.14f), new Color(0.45f, 0.3f, 0.75f), false);
+                    DemoUI.DisableShadows(marker);
+                }
+                Vector3 labelPos = st.position + (onFloor ? new Vector3(0f, 0.3f, 1.1f) : floating ? new Vector3(0f, -0.35f, 0f) : new Vector3(0f, 0.32f, 0f));
+                if (st.name.Contains("Poke")) labelPos = st.position + new Vector3(0f, 0.38f, 0f);
+                Label(stationGo.transform, $"{i + 1}  {st.block}", labelPos, new Vector2(300f, 50f), 26);
+            }
 
             // Tablica w VR z opisem stanowisk.
             Vector3 signPos = new Vector3(1.4f, 1.45f, -1.3f);
-            var sign = DemoUI.CreatePanel("ISDK_Info", z, signPos, DemoUI.FacePoint(signPos, HeadPos), new Vector2(820f, 520f), PanelBg);
-            DemoUI.CreateFillText(sign, "Text", 25f, 28, TextAnchor.UpperLeft, Color.white,
-                "<b><color=#C8A0FF>INTERACTION SDK</color></b>\n" +
-                "Te obiekty obsługują Building Blocks ISDK,\nnie skrypty demo.\n\n" +
-                "1  Grab – chwyć i rzuć\n" +
-                "2  Touch Hand Grab – palce obejmują kulę\n" +
-                "3  Distance Grab – chwyć z daleka\n" +
-                "4  Poke / Ray – przycisk UI\n" +
-                "5  Teleport – wskaż podłogę i przenieś się");
+            var sign = DemoUI.CreatePanel("ISDK_Info", z, signPos, DemoUI.FacePoint(signPos, HeadPos), new Vector2(820f, 560f), PanelBg);
+            var sb = new StringBuilder("<b><color=#C8A0FF>INTERACTION SDK</color></b>\nObiekty z Building Blocks – obsługuje je ISDK,\nnie skrypty demo.\n\n");
+            for (int i = 0; i < IsdkStations.Length; i++)
+                sb.Append(i + 1).Append("  <b>").Append(IsdkStations[i].block).Append("</b> – ").Append(IsdkStations[i].hint).Append('\n');
+            DemoUI.CreateFillText(sign, "Text", 25f, 27, TextAnchor.UpperLeft, Color.white, sb.ToString());
         }
 
-        static void IsdkObject(Transform parent, string name, PrimitiveType type, Vector3 pos, Vector3 scale, Color color)
+        [MenuItem("VR Input Demo/Ułóż bloki ISDK na stanowiskach", false, 5)]
+        public static void ArrangeIsdkBlocks()
         {
-            var go = DemoUI.CreatePrimitive(type, name, parent, pos, scale, color);
-            var rb = go.AddComponent<Rigidbody>();
-            rb.mass = 0.4f;
+            var zoneGo = GameObject.Find(IsdkZoneName);
+            if (zoneGo == null)
+            {
+                EditorUtility.DisplayDialog("VR Input Demo", "W scenie nie ma strefy " + IsdkZoneName + ". Uruchom krok 2 (Zbuduj scenę demo).", "OK");
+                return;
+            }
+            Transform zone = zoneGo.transform;
+
+            var stations = new Dictionary<IsdkStation, Transform>();
+            foreach (var st in IsdkStations)
+            {
+                var t = zone.Find(st.name);
+                if (t != null) stations[st] = t;
+            }
+
+            // 1) Znajdź obiekty "[BuildingBlock] ..." należące do bloków ISDK.
+            var moved = new Dictionary<IsdkStation, List<Transform>>();
+            foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (!t.name.StartsWith("[BuildingBlock]")) continue;
+                if (IsNonIsdkBlock(t)) continue;
+                string key = BlockKey(t);
+
+                IsdkStation station = MatchStation(key);
+                if (station == null || !stations.ContainsKey(station)) continue;
+
+                Transform movable = MovableRoot(t, zone, stations.Values);
+                if (movable == null) continue;
+
+                if (!moved.TryGetValue(station, out var list)) moved[station] = list = new List<Transform>();
+                if (!list.Contains(movable)) list.Add(movable);
+            }
+
+            // 2) Przenieś na stanowiska.
+            foreach (var pair in moved)
+            {
+                var st = pair.Key;
+                for (int i = 0; i < pair.Value.Count; i++)
+                {
+                    Transform obj = pair.Value[i];
+                    Undo.SetTransformParent(obj, stations[st], "Ułóż bloki ISDK");
+                    Undo.RecordObject(obj, "Ułóż bloki ISDK");
+                    obj.localPosition = st.blockOffset + new Vector3(0.15f * i, 0f, 0f);
+                    obj.localRotation = Quaternion.Euler(0f, st.yaw, 0f);
+                    if (st.scale > 0f) obj.localScale = Vector3.one * st.scale;
+                }
+            }
+
+            EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+
+            var report = new StringBuilder("Bloki ISDK na stanowiskach:\n\n");
+            for (int i = 0; i < IsdkStations.Length; i++)
+            {
+                var st = IsdkStations[i];
+                int n = moved.TryGetValue(st, out var l) ? l.Count : 0;
+                report.Append(n > 0 ? "[OK]   " : "[--]   ").Append(i + 1).Append(' ').Append(st.block)
+                      .AppendLine(n > 0 ? "" : " – nie dodano bloku");
+            }
+            report.Append("\nZapisz scenę (Ctrl+S). Jeśli przycisk lub cel jest odwrócony tyłem, obróć go o 180° w osi Y.");
+            EditorUtility.DisplayDialog("VR Input Demo", report.ToString(), "OK");
+        }
+
+        static bool IsNonIsdkBlock(Transform t)
+        {
+            string n = t.name.Replace(" ", "").ToLowerInvariant();
+            return NonIsdkBlockKeywords.Any(n.Contains);
+        }
+
+        /// <summary>
+        /// Klucz rozpoznawania bloku: nazwa obiektu + nazwy typów komponentów w nim i w dzieciach
+        /// (np. TouchHandGrabInteractable, DistanceHandGrabInteractable, PokeInteractable, RayInteractable).
+        /// Różne bloki chwytu mogą mieć tę samą nazwę obiektu, ale różne komponenty.
+        /// </summary>
+        static string BlockKey(Transform t)
+        {
+            var sb = new StringBuilder(t.name);
+            foreach (var c in t.GetComponentsInChildren<Component>(true))
+                if (c != null) sb.Append('|').Append(c.GetType().Name);
+            return sb.ToString().Replace(" ", "").ToLowerInvariant();
+        }
+
+        static IsdkStation MatchStation(string key)
+        {
+            // Kolejność ma znaczenie: "distance" i "touch" przed ogólnym "grab".
+            foreach (string k in new[] { "teleport", "distance", "touch", "poke", "rayinteract", "grab" })
+            {
+                if (!key.Contains(k)) continue;
+                return IsdkStations.FirstOrDefault(s => s.keywords.Contains(k));
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Najwyższy obiekt, który należy przenieść: wspinamy się w górę hierarchii, aż do korzenia sceny,
+        /// strefy ISDK albo stanowiska. Nie ruszamy obiektów demo ani rigu kamery.
+        /// </summary>
+        static Transform MovableRoot(Transform t, Transform zone, IEnumerable<Transform> stations)
+        {
+            var stationSet = new HashSet<Transform>(stations);
+            while (t.parent != null && t.parent != zone && !stationSet.Contains(t.parent)) t = t.parent;
+
+            if (t.parent == null)
+            {
+                if (DemoRootNames.Contains(t.name) || t.GetComponentInChildren<OVRCameraRig>(true) != null) return null;
+            }
+            return t;
         }
 
         // =====================================================================

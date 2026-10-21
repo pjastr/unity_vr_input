@@ -76,7 +76,7 @@ unity_vr_input/
    │  ├─ DemoLog.cs / DemoLogPanel.cs ← dziennik zdarzeń (panel + logcat)
    │  ├─ DemoUI.cs, ColorTint.cs, DemoResources.cs ← pomocnicze (prymitywy, panele, kolory)
    │  ├─ Projectile.cs
-   │  └─ IsdkZone.cs, IsdkButtonCounter.cs ← strefa Interaction SDK
+   │  └─ IsdkZone.cs              ← znacznik strefy Interaction SDK
    ├─ Scenes/InputDemo.unity      ← tworzona przez menu VR Input Demo › 2
    ├─ Materials/DemoLit.mat       ← tworzony automatycznie (URP/Lit)
    └─ Settings/VRInputDemo_URP*.asset ← tworzone automatycznie (URP)
@@ -336,44 +336,51 @@ Gest musi być stabilny przez 0,12 s (oprócz pinch), żeby nie migotał przy pr
 
 ## 8. Strefa Interaction SDK
 
-Za plecami gracza stoi stół z ponumerowanymi obiektami. **Bez bloków ISDK nic na nie nie reaguje** – to celowe: po dodaniu każdego bloku widać, co on wnosi.
+Za plecami gracza stoi stół ISDK z **6 ponumerowanymi stanowiskami**. Na każde trafia gotowy obiekt utworzony przez jeden Building Block ISDK. Bloki tworzą kompletne, podpięte obiekty same – nie nakłada się ich na prymitywy demo.
 
 ```
-        [5] podłoga do teleportu
-            [4] panel UI z przyciskiem
-   ┌──────────── STÓŁ ISDK ────────────┐     [tablica z opisem]
-   │  [3] walec   [2] kula   [1] kostka │
-   └───────────────────────────────────┘
-                 ( TY – odwróć się )
+                  [6] Teleport (podłoga)
+                  [5] Ray (cel w powietrzu)
+   ┌─────────────────── STÓŁ ISDK ───────────────────┐   [tablica]
+   │ [3] Distance Grab  [4] Poke  [2] Touch  [1] Grab │
+   └──────────────────────────────────────────────────┘
+                     ( TY – odwróć się )
 ```
 
-### Krok 1 – dodaj rig interakcji
-**Building Blocks › Interactions Rig › Add Block.**
-Rig trafia pod Camera Rig i zawiera interaktory chwytu, poke, promienia i teleportu – dla dłoni i kontrolerów.
+### Krok 1 – rig interakcji
+1. Kliknij w puste miejsce w Hierarchy, żeby **nic nie było zaznaczone**.
+2. **Building Blocks › Interactions Rig › Add Block.**
+3. `[BuildingBlock] OVRComprehensiveInteractionRig` ma leżeć na **najwyższym poziomie** Hierarchy, obok `[BuildingBlock] Camera Rig`. Jeśli trafił gdzie indziej, przeciągnij go wyżej.
 
-### Krok 2 – nałóż bloki na obiekty
-Przeciągnij kafelek bloku z okna Building Blocks i **upuść go na obiekt** w Hierarchy (obiekty są pod `ISDK_Zone`):
+### Krok 2 – bloki interakcji
+Dla każdego bloku z tabeli: **odznacz wszystko w Hierarchy** i kliknij **Add Block**. Nie upuszczaj bloków na obiekty sceny – blok sam utworzy swój obiekt.
 
-| Obiekt | Blok | Co sprawdzić w goglach |
+| Nr | Blok | Co sprawdzić w goglach |
 |---|---|---|
-| `ISDK_1_Grab_Kostka` | **Grab Interaction** | chwyć (pinch lub grip), przełóż do drugiej ręki, rzuć |
-| `ISDK_2_TouchHandGrab_Kula` | **Touch Hand Grab** | chwyć dłonią – palce układają się na kuli |
-| `ISDK_3_DistanceGrab_Walec` | **Distance Grab** | wskaż walec z daleka i chwyć – przyleci do ręki |
-| `ISDK_4_UI_Canvas` | **Poke Interaction**, potem **Ray Interaction** | wciśnij przycisk palcem, potem promieniem – licznik rośnie |
-| `ISDK_5_Teleport_Podloga` | **Teleport** | wskaż podłogę i przenieś się |
+| 1 | **Grab Interaction** | chwyć (pinch lub grip), przełóż do drugiej ręki, rzuć |
+| 2 | **Touch Hand Grab** | chwyć dłonią – palce układają się na obiekcie |
+| 3 | **Distance Grab** | wskaż obiekt z daleka i chwyć – przyleci do ręki |
+| 4 | **Poke Interaction** | wciśnij przycisk palcem lub końcówką kontrolera |
+| 5 | **Ray Interaction** | wskaż cel promieniem i wybierz (trigger / pinch) – cel zmienia kolor |
+| 6 | **Teleport** | gałka do przodu, wskaż podłogę, puść |
 
-> Jeśli Twoja wersja SDK zamiast nałożyć blok na obiekt doda własny obiekt przykładowy, przenieś go w Hierarchy do `ISDK_Zone`, ustaw w miejscu naszego prymitywu, a prymityw usuń.
+### Krok 3 – ułożenie na stanowiskach
+**VR Input Demo › Ułóż bloki ISDK na stanowiskach.** Polecenie samo rozpozna obiekty z bloków, przeniesie je na właściwe stanowiska i pokaże, których bloków jeszcze brakuje. Potem **Ctrl+S**.
 
-### Krok 3 – zapisz i sprawdź
-**Ctrl+S**, potem **VR Input Demo › 3. Sprawdź bloki w scenie** – wiersz *Interactions Rig* powinien mieć `[OK]`.
+Jeśli przycisk (4) albo cel (5) jest zwrócony do Ciebie tyłem, zaznacz go i obróć o 180° w osi Y.
+
+### Krok 4 – sprawdzenie
+**VR Input Demo › 3. Sprawdź bloki w scenie** – przy *Interactions Rig* zobaczysz też licznik bloków ISDK (np. `6/6`).
+
+> **Masz strefę ze starej wersji** (kostka, kula, walec, panel UI)? Uruchom **VR Input Demo › 2. Zbuduj scenę demo** i zgódź się na **Przebuduj strefę**. Stare bloki ISDK znikną razem z nią – dodaj je ponownie od kroku 2.
 
 ### Jak demo zachowuje się przy rigu ISDK
 Przy starcie demo wykrywa blok Interactions Rig i:
-- **ukrywa modele dłoni i kontrolerów** z bloków Hand Tracking / Controller Tracking – ISDK rysuje własne, więc nie ma podwójnych dłoni (gesty demo działają dalej),
-- **wyłącza chodzenie i obrót gałkami** z demo – gałki przejmuje ISDK (teleport, obrót); mikrogesty dłoni działają dalej,
-- **chowa własny promień** nad obiektami strefy ISDK; skrypty demo nie chwytają obiektów ISDK.
+- **ukrywa modele dłoni i kontrolerów** z bloków Hand Tracking / Controller Tracking – ISDK rysuje własne (gesty demo działają dalej),
+- **wyłącza chodzenie i obrót gałkami** z demo – gałki przejmuje ISDK (teleport, obrót); mikrogesty działają dalej,
+- **chowa własny promień** nad strefą ISDK; skrypty demo nie chwytają obiektów ISDK.
 
-Oba zachowania można wyłączyć w obiekcie **Demo › DemoActions**: *Hide Block Visuals When Isdk Rig Present* i *Disable Own Locomotion When Isdk Rig Present*. Usunięcie bloku Interactions Rig przywraca pełne zachowanie demo.
+Oba zachowania można wyłączyć w obiekcie **Demo › DemoActions**: *Hide Block Visuals When Isdk Rig Present* i *Disable Own Locomotion When Isdk Rig Present*.
 
 ---
 
@@ -400,7 +407,7 @@ else if (g.Current == HandGesture.OpenPalm && held > 0.5f)
 
 **Nowy gest** – dodaj wartość do `HandGesture` i warunek w `HandGestureDetector.Classify()` (masz do dyspozycji `Ratios[0..4]`, `ThumbDirection`, `PalmCenter`, `IndexTip`).
 
-**Odświeżenie sceny** – po zmianach w `VRInputDemoSetup.cs` uruchom ponownie *VR Input Demo › 2. Zbuduj scenę demo*. Obiekty demo powstaną od nowa, a Building Blocks i strefa ISDK zostaną. Aby odbudować także strefę ISDK, usuń wcześniej obiekt `ISDK_Zone` (bloki ISDK trzeba wtedy nałożyć ponownie).
+**Odświeżenie sceny** – po zmianach w `VRInputDemoSetup.cs` uruchom ponownie *VR Input Demo › 2. Zbuduj scenę demo*. Obiekty demo powstaną od nowa, a Building Blocks i strefa ISDK zostaną. Aby odbudować także strefę ISDK, usuń wcześniej obiekt `ISDK_Zone` (bloki ISDK trzeba wtedy dodać ponownie).
 
 ---
 
